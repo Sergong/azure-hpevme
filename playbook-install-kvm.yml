@@ -1,0 +1,170 @@
+---
+- name: Install KVM, Virtualization Tools, and HPE VM Package
+  hosts: azure_vms
+  become: yes
+  gather_facts: yes
+
+  vars:
+    kvm_packages:
+      - qemu-kvm
+      - qemu-block-extra
+      - libvirt-daemon-system
+      - libvirt-clients
+      - virtinst
+      - genisoimage
+      - apparmor-utils
+      - ceph-common
+      - libvirt-daemon-driver-storage-rbd
+      - nfs-common
+      - gfs2-utils
+      - corosync
+      - dlm-controld
+      - ceph
+      - openvswitch-switch
+      - pacemaker
+      - pcs
+      - resource-agents-extra
+      - fence-agents-base
+    hpe_vm_deb_local: "hpe-vm_1.0.11-1_amd64.deb"
+    hpe_vm_deb_remote: "/tmp/hpe-vm_1.0.11-1_amd64.deb"
+    hpe_qcow_local: "hpe-vm-essentials-8.0.10-1.qcow2.gz"
+    hpe_qcow_remote: "/tmp/hpe-vm-essentials-8.0.10-1.qcow2.gz"
+
+  tasks:
+    - name: Update apt cache
+      ansible.builtin.apt:
+        update_cache: yes
+        cache_valid_time: 3600
+
+    - name: Install KVM and virtualization packages
+      ansible.builtin.apt:
+        name: "{{ kvm_packages }}"
+        state: present
+      register: apt_install_result
+
+    - name: Upload HPE VM deb package to remote host
+      ansible.builtin.copy:
+        src: "{{ hpe_vm_deb_local }}"
+        dest: "{{ hpe_vm_deb_remote }}"
+        mode: '0644'
+
+    - name: Install HPE VM package
+      ansible.builtin.apt:
+        deb: "{{ hpe_vm_deb_remote }}"
+        state: present
+
+    - name: Ensure libvirt service is started and enabled
+      ansible.builtin.systemd:
+        name: libvirtd
+        state: started
+        enabled: yes
+
+    - name: Add admin user to libvirt group
+      ansible.builtin.user:
+        name: "{{ ansible_user }}"
+        groups: libvirt
+        append: yes
+
+    - name: Verify KVM installation
+      ansible.builtin.command: kvm-ok
+      register: kvm_ok_result
+      failed_when: false
+      changed_when: false
+
+    - name: Display KVM verification result
+      ansible.builtin.debug:
+        msg: "{{ kvm_ok_result.stdout_lines }}"
+
+    # OVS Bridge Configuration for nested VM networking
+    - name: Check if OVS mgmt bridge exists
+      ansible.builtin.command: ovs-vsctl br-exists mgmt
+      register: mgmt_bridge_exists
+      failed_when: false
+      changed_when: false
+
+    - name: Get IP address from eth1
+      ansible.builtin.shell: ip -4 addr show eth1 | grep -oP '(?<=inet\s)\d+(\.\d+){3}/\d+' | head -1
+      register: eth1_ip
+      when: mgmt_bridge_exists.rc != 0
+      changed_when: false
+
+    - name: Create OVS mgmt bridge
+      ansible.builtin.command: ovs-vsctl add-br mgmt
+      when: mgmt_bridge_exists.rc != 0
+
+    - name: Add eth1 port to mgmt bridge
+      ansible.builtin.command: ovs-vsctl add-port mgmt eth1
+      when: mgmt_bridge_exists.rc != 0
+
+    - name: Assign IP address to mgmt bridge
+      ansible.builtin.command: ip addr add {{ eth1_ip.stdout }} dev mgmt
+      when: mgmt_bridge_exists.rc != 0 and eth1_ip.stdout is defined
+
+    - name: Flush IP address from eth1
+      ansible.builtin.command: ip addr flush dev eth1
+      when: mgmt_bridge_exists.rc != 0
+
+    - name: Bring mgmt bridge up
+      ansible.builtin.command: ip link set mgmt up
+      when: mgmt_bridge_exists.rc != 0
+
+    - name: Update netplan configuration for mgmt bridge
+      ansible.builtin.replace:
+        path: /etc/netplan/50-cloud-init.yaml
+        regexp: 'eth1'
+        replace: 'mgmt'
+      when: mgmt_bridge_exists.rc != 0
+
+    - name: Apply netplan configuration
+      ansible.builtin.command: netplan apply
+      when: mgmt_bridge_exists.rc != 0
+
+    # Configure nested VM routing
+    - name: Copy nested VM routes setup script
+      ansible.builtin.copy:
+        src: setup-nested-vm-routes.sh
+        dest: /tmp/setup-nested-vm-routes.sh
+        mode: '0755'
+
+    - name: Configure nested VM routes
+      ansible.builtin.command: /tmp/setup-nested-vm-routes.sh
+      register: routes_result
+      changed_when: '"Adding route" in routes_result.stdout'
+
+    # Configure UFW for nested VM traffic
+    - name: Set UFW default routed policy to allow
+      ansible.builtin.command: ufw default allow routed
+      register: ufw_routed
+      changed_when: '"Default routed policy changed" in ufw_routed.stdout'
+
+    - name: Allow SSH on eth0 (management interface)
+      community.general.ufw:
+        rule: allow
+        port: '22'
+        interface: eth0
+        direction: in
+
+    - name: Allow all traffic on mgmt bridge
+      community.general.ufw:
+        rule: allow
+        interface: mgmt
+        direction: in
+
+    - name: Allow all traffic out on mgmt bridge
+      community.general.ufw:
+        rule: allow
+        interface: mgmt
+        direction: out
+
+    - name: Enable UFW
+      community.general.ufw:
+        state: enabled
+
+    - name: Tasks for the first Host
+      when: '"vme-kvm-vm1" in inventory_hostname'
+      block: 
+        - name: Uploading HPE VM Essentials Disk to remote host
+          ansible.builtin.copy:
+            src: "{{ hpe_qcow_local }}"
+            dest: "{{ hpe_qcow_remote }}"
+            mode: '0644'

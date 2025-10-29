@@ -1,0 +1,22 @@
+---
+all:
+  children:
+    azure_vms:
+      hosts:
+        vme-kvm-vm1:
+          ansible_host: 172.190.136.145
+          ansible_user: adm_smeeuwsen
+          private_ip: 10.0.2.5
+          data_mount_path: /data
+          vm_size: Standard_E4as_v5
+        vme-kvm-vm2:
+          ansible_host: 20.42.44.136
+          ansible_user: adm_smeeuwsen
+          private_ip: 10.0.2.4
+          data_mount_path: /data
+          vm_size: Standard_E4as_v5
+      vars:
+        ansible_ssh_private_key_file: ~/.ssh/id_rsa
+        ansible_python_interpreter: /usr/bin/python3
+        resource_group: rg-hpe-vme-test
+        location: eastus
