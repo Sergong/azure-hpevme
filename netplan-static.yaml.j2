@@ -1,0 +1,15 @@
+network:
+  version: 2
+  ethernets:
+    eth0:
+      dhcp4: false
+      addresses:
+        - {{ eth0_ip }}
+      routes:
+        - to: default
+          via: {{ gateway }}
+      nameservers:
+        addresses:
+          - {{ nameservers }}
+    eth1:
+      dhcp4: false

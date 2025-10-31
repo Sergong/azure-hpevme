@@ -1,0 +1,55 @@
+---
+- name: Configure DNS search domain for Azure Private DNS Zone
+  hosts: azure_vms
+  become: yes
+  gather_facts: yes
+
+  vars:
+    dns_search_domain: "hpevme.local"
+
+  tasks:
+    - name: Configure DNS search domains on eth0 interface
+      ansible.builtin.shell: |
+        resolvectl domain eth0 {{ dns_search_domain }} 5q1ivbogeb3eblqguatgczs0gh.bx.internal.cloudapp.net
+        resolvectl flush-caches
+      become: yes
+
+    - name: Create systemd-resolved drop-in directory
+      ansible.builtin.file:
+        path: /etc/systemd/resolved.conf.d
+        state: directory
+        mode: '0755'
+      become: yes
+
+    - name: Configure DNS search domain persistently
+      ansible.builtin.copy:
+        content: |
+          [Resolve]
+          Domains={{ dns_search_domain }}
+        dest: /etc/systemd/resolved.conf.d/private-dns.conf
+        mode: '0644'
+      become: yes
+
+    - name: Restart systemd-resolved
+      ansible.builtin.systemd:
+        name: systemd-resolved
+        state: restarted
+      become: yes
+
+    - name: Wait for systemd-resolved to restart
+      ansible.builtin.wait_for:
+        timeout: 5
+
+    - name: Verify DNS resolution
+      ansible.builtin.shell: ping -c 1 {{ item }}
+      loop:
+        - "vme-kvm-vm1.hpevme.local"
+        - "vme-kvm-vm2.hpevme.local"
+        - "jumphost.hpevme.local"
+      register: dns_test
+      failed_when: false
+      changed_when: false
+
+    - name: Display DNS test results
+      ansible.builtin.debug:
+        msg: "{{ dns_test.results | map(attribute='stdout_lines') | list }}"

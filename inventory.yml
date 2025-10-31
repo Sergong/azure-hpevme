@@ -4,19 +4,37 @@ all:
     azure_vms:
       hosts:
         vme-kvm-vm1:
-          ansible_host: 172.190.136.145
+          ansible_host: 20.172.133.138
           ansible_user: adm_smeeuwsen
           private_ip: 10.0.2.5
+          vm_traffic_ip: 10.0.1.10
+          nested_vm_range: 10.0.1.16/28
           data_mount_path: /data
           vm_size: Standard_E4as_v5
         vme-kvm-vm2:
-          ansible_host: 20.42.44.136
+          ansible_host: 20.39.44.212
           ansible_user: adm_smeeuwsen
           private_ip: 10.0.2.4
+          vm_traffic_ip: 10.0.1.11
+          nested_vm_range: 10.0.1.48/28
           data_mount_path: /data
           vm_size: Standard_E4as_v5
       vars:
         ansible_ssh_private_key_file: ~/.ssh/id_rsa
         ansible_python_interpreter: /usr/bin/python3
+        resource_group: rg-hpe-vme-test
+        location: eastus
+    
+    windows_jumphosts:
+      hosts:
+        vme-kvm-jumphost:
+          ansible_host: 20.39.63.185
+          ansible_user: azureadmin
+          ansible_connection: ssh
+          ansible_shell_type: powershell
+          ansible_ssh_common_args: '-o StrictHostKeyChecking=no'
+          private_ip: 10.0.2.100
+      vars:
+        ansible_password: "{{ vault_jumphost_password }}"
         resource_group: rg-hpe-vme-test
         location: eastus

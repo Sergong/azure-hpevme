@@ -9,15 +9,29 @@ The project creates:
 - **Virtual Network** (10.0.0.0/16) with:
   - **VM Traffic Subnet** (10.0.1.0/24) - For KVM hosts and nested VMs
   - **Management Subnet** (10.0.2.0/24) - For public IP access and management
+- **Private DNS Zone** (`hpevme.local`) with:
+  - Auto-registration for VM management interfaces
+  - Manual A records for traffic interfaces and nested VMs
+  - Automatic DNS resolution within the VNet
 - **Route Table** with routes for nested VM IP ranges
-- **Network Security Group** with rules for SSH, HTTP, HTTPS, ICMP, and VNet traffic
+- **Network Security Groups**:
+  - **Linux VMs NSG**: SSH access restricted to your public IP, full VNet communication
+  - **Windows Jumphost NSG**: RDP and SSH access restricted to your public IP
 - **Public IP addresses** (Standard SKU, Static)
 - **Network Interfaces** with IP forwarding enabled:
   - Management NIC (primary, has public IP)
   - VM Traffic NIC (secondary, for nested VM traffic)
 - **SSH Key resource**
 - **1TB data disks** (Standard HDD) for each host
-- **KVM Host VMs** (Ubuntu 24.04 LTS, Standard_E4as_v5)
+- **Lifecycle Management**: VMs configured with `ignore_changes` for `custom_data` to prevent unnecessary replacement during infrastructure updates
+- **KVM Host VMs** (Ubuntu 24.04 LTS, Standard_E4as_v5) with:
+  - KVM/QEMU virtualization packages
+  - OpenVSwitch for nested VM networking
+  - Configured OVS bridge (`mgmt`) on eth1
+- **Windows Jumphost** (Windows Server 2022, Standard_B2s) with:
+  - OpenSSH Server for Ansible management
+  - PuTTY for SSH access to Linux VMs
+  - Configured DNS suffix for private DNS resolution
 
 ## Prerequisites
 
@@ -75,9 +89,14 @@ The project creates:
 | `location` | Azure region | `East US` | No |
 | `prefix` | Prefix for resource names | `ubuntu` | No |
 | `vm_count` | Number of VMs to create | `2` | No |
-| `vm_size` | VM SKU | `Standard_E4as_v5` | No |
-| `admin_username` | Admin username for VMs | `azureuser` | No |
+| `vm_size` | VM SKU for Linux KVM hosts | `Standard_E4as_v5` | No |
+| `admin_username` | Admin username for Linux VMs | `azureuser` | No |
 | `ssh_public_key_path` | Path to SSH public key | `~/.ssh/id_rsa.pub` | No |
+| `jumphost_vm_size` | VM SKU for Windows jumphost | `Standard_B2s` | No |
+| `jumphost_admin_username` | Admin username for Windows jumphost | `azureadmin` | No |
+| `jumphost_admin_password` | Admin password for Windows jumphost | - | Yes |
+| `my_public_ip` | Your public IP for NSG whitelist | `193.237.155.169/32` | No |
+| `private_dns_zone_name` | Private DNS zone name | `hpevme.local` | No |
 | `tags` | Tags for all resources | See variables.tf | No |
 
 ## Outputs
@@ -103,23 +122,68 @@ After deployment, Terraform will output:
 
 ## Security Features
 
-- Network Security Group with controlled inbound rules:
-  - SSH (port 22)
-  - HTTP (port 80)
-  - HTTPS (port 443)
-- Password authentication disabled
-- SSH key-based authentication only
+- **Network Security Groups** with IP-restricted access:
+  - **Linux VMs NSG**: SSH (port 22) from your public IP only
+  - **Windows Jumphost NSG**: RDP (port 3389) and SSH (port 22) from your public IP only
+  - Full VNet-to-VNet communication allowed
+- **Linux VMs**: Password authentication disabled, SSH key-based authentication only
+- **Windows Jumphost**: OpenSSH Server with password authentication for Ansible management
+- **Private DNS Zone**: Internal name resolution without exposing to public internet
 
 ## Post-Deployment
 
-Each VM comes with:
-- HPE VME repositories configured and enabled:
-  - `https://update1.linux.hpe.com/repo/hpevme/zion-private-ubuntu/`
-  - `https://update1.linux.hpe.com/repo/hpevme/zion-os-updates-prod/ubuntu2404-os-updates/`
-- Updated package repositories (including HPE repos)
-- Basic tools installed (curl, wget, git, vim, htop, tree)
-- 1TB data disk automatically formatted (ext4) and mounted at `/data`
-- Custom welcome message with data disk information
+### Linux KVM Hosts
+
+Each Linux VM comes with:
+- **KVM/Virtualization packages** installed:
+  - qemu-kvm, libvirt, virtinst, OpenVSwitch
+  - Pacemaker, Corosync, Ceph for clustering
+- **HPE VM Essentials package** installed (hpe-vm_1.0.11-1_amd64.deb)
+- **OVS Bridge** configured:
+  - Bridge name: `mgmt`
+  - Connected to eth1 interface
+  - Configured via netplan with static IP
+- **DNS Configuration**:
+  - Private DNS zone: `hpevme.local`
+  - Search domains configured for internal name resolution
+- **1TB data disk** automatically formatted (ext4) and mounted at `/data`
+- **Nested VM routing** configured for cross-host communication
+- **NAT configured** for nested VM internet access
+
+### Windows Jumphost
+
+The Windows jumphost comes with:
+- **OpenSSH Server** installed and configured
+- **PuTTY** installed via Chocolatey
+- **DNS suffix** configured for `hpevme.local` resolution
+- **Accessible via RDP** from your public IP
+- **Accessible via SSH** for Ansible management
+
+### DNS Hostnames
+
+All VMs are accessible via internal DNS (`hpevme.local` private DNS zone):
+
+| Hostname | IP Address | Type | Description |
+|----------|------------|------|-------------|
+| `vme-kvm-vm1.hpevme.local` | 10.0.2.5 | Auto-registered | KVM host 1 management interface |
+| `vme-kvm-vm1-traffic.hpevme.local` | 10.0.1.10 | Manual A record | KVM host 1 traffic interface |
+| `vme-kvm-vm2.hpevme.local` | 10.0.2.4 | Auto-registered | KVM host 2 management interface |
+| `vme-kvm-vm2-traffic.hpevme.local` | 10.0.1.11 | Manual A record | KVM host 2 traffic interface |
+| `jumphost.hpevme.local` | 10.0.2.100 | Auto-registered | Windows jumphost |
+| `hpevme.hpevme.local` | 10.0.1.20 | Manual A record | Example nested VM hostname |
+
+**DNS Configuration:**
+- **Auto-registration**: VM NICs in management subnet automatically register their hostnames
+- **Manual A records**: Traffic interfaces and nested VM hostnames are created via Terraform
+- **DNS Search Domain**: All VMs have `hpevme.local` configured as a search domain
+- **Resolution**: Works automatically within the VNet without additional configuration
+
+### Ansible Inventory
+
+An Ansible inventory file (`inventory.yml`) is provided with:
+- **azure_vms** group: Linux KVM hosts
+- **windows_jumphosts** group: Windows jumphost
+- Configured with proper SSH settings and passwords (via Ansible Vault)
 
 ## Cleanup
 
@@ -147,11 +211,122 @@ You can modify the project to:
 ## Files Structure
 
 ```
-├── main.tf                    # Main Terraform configuration
-├── variables.tf               # Variable definitions
-├── outputs.tf                 # Output definitions
-├── terraform.tfvars.example   # Example variables file
-└── README.md                  # This file
+├── main.tf                           # Main Terraform configuration
+├── variables.tf                      # Variable definitions
+├── outputs.tf                        # Output definitions
+├── terraform.tfvars.example          # Example variables file
+├── inventory.yml                     # Ansible inventory
+├── playbook-install-kvm.yml          # Ansible playbook for KVM setup
+├── playbook-install-putty.yml        # Ansible playbook for PuTTY installation
+├── playbook-configure-dns.yml        # Ansible playbook for DNS configuration
+├── playbook-configure-windows-dns.yml # Ansible playbook for Windows DNS
+├── playbook-configure-jumphost-firewall.yml # Ansible playbook for jumphost firewall
+├── netplan-static.yaml.j2            # Netplan template for static IPs
+├── netplan-with-ovs.yaml.j2          # Netplan template with OVS bridge
+├── setup-nested-vm-routes.sh         # Script for nested VM routing
+├── setup-nested-vm-nat.sh            # Script for NAT configuration
+├── group_vars/windows_jumphosts/     # Ansible vault for Windows password
+└── README.md                         # This file
+```
+
+## Ansible Management
+
+### Prerequisites
+
+1. **Ansible installed**:
+   ```bash
+   pip install ansible
+   ```
+
+2. **Ansible Vault password** configured:
+   ```bash
+   # Create vault password file (recommended)
+   echo "your-vault-password" > .vault_pass
+   chmod 600 .vault_pass
+   echo ".vault_pass" >> .gitignore
+   
+   # Or create vault interactively
+   ansible-vault create group_vars/windows_jumphosts/vault.yml
+   ```
+
+3. **Set Windows jumphost password** in vault:
+   ```yaml
+   # In group_vars/windows_jumphosts/vault.yml
+   vault_jumphost_password: YourWindowsPassword
+   ```
+
+### Available Playbooks
+
+#### 1. Install KVM and Configure Networking
+```bash
+ansible-playbook playbook-install-kvm.yml
+```
+
+This playbook:
+- Installs KVM/QEMU and virtualization packages
+- Configures OpenVSwitch bridge for nested VMs
+- Sets up static IPs via netplan
+- Configures nested VM routing and NAT
+- Installs HPE VM Essentials package
+
+#### 2. Install PuTTY on Windows Jumphost
+```bash
+ansible-playbook playbook-install-putty.yml
+```
+
+This playbook:
+- Installs Chocolatey package manager
+- Installs PuTTY via Chocolatey
+- Verifies installation
+
+#### 3. Configure DNS on Linux VMs
+```bash
+ansible-playbook playbook-configure-dns.yml
+```
+
+This playbook:
+- Configures DNS search domains for `hpevme.local`
+- Sets up persistent DNS configuration
+- Verifies DNS resolution
+
+#### 4. Configure DNS on Windows Jumphost
+```bash
+ansible-playbook playbook-configure-windows-dns.yml
+```
+
+This playbook:
+- Configures DNS suffix search list
+- Flushes DNS cache
+- Tests DNS resolution
+
+#### 5. Configure Windows Jumphost Firewall
+```bash
+ansible-playbook playbook-configure-jumphost-firewall.yml
+```
+
+This playbook:
+- Enables ICMP (ping) on Windows Firewall
+- Creates firewall rule for inbound ICMP Echo Requests
+- Verifies firewall rule creation
+- Allows testing connectivity to jumphost from Linux VMs
+
+### Ad-hoc Ansible Commands
+
+```bash
+# Check connectivity to all hosts
+ansible all -m ping
+
+# Check Linux VMs only
+ansible azure_vms -m ping
+
+# Check Windows jumphost only
+ansible windows_jumphosts -m win_ping
+
+# Run shell command on all Linux VMs
+ansible azure_vms -m shell -a "uptime"
+
+# Get IP addresses
+ansible azure_vms -m shell -a "ip addr"
 ```
 
 ## Storage Configuration

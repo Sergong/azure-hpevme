@@ -80,3 +80,41 @@ variable "tags" {
     CreatedBy   = "Terraform"
   }
 }
+
+# Windows Jumphost Variables
+variable "jumphost_ip" {
+  description = "Static IP address for Windows jumphost in management subnet (10.0.2.0/24)"
+  type        = string
+  default     = "10.0.2.100"
+}
+
+variable "jumphost_vm_size" {
+  description = "Size of the Windows jumphost VM"
+  type        = string
+  default     = "Standard_B2s"
+}
+
+variable "jumphost_admin_username" {
+  description = "Admin username for Windows jumphost"
+  type        = string
+  default     = "azureadmin"
+}
+
+variable "jumphost_admin_password" {
+  description = "Admin password for Windows jumphost (must meet Azure complexity requirements: 12+ chars with upper, lower, number, and special character)"
+  type        = string
+  sensitive   = true
+  # No default - Terraform will prompt for this value
+}
+
+variable "my_public_ip" {
+  description = "Your public IP address for NSG whitelist (format: x.x.x.x/32)"
+  type        = string
+  default     = "193.237.155.169/32"
+}
+
+variable "private_dns_zone_name" {
+  description = "Name of the private DNS zone for internal name resolution"
+  type        = string
+  default     = "hpevme.local"
+}

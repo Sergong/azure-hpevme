@@ -67,3 +67,67 @@ output "nested_vm_ip_allocation" {
     }
   }
 }
+
+# Windows Jumphost Outputs
+output "jumphost_name" {
+  description = "Name of the Windows jumphost"
+  value       = azurerm_windows_virtual_machine.jumphost.name
+}
+
+output "jumphost_public_ip" {
+  description = "Public IP address of the Windows jumphost"
+  value       = azurerm_public_ip.jumphost_public_ip.ip_address
+}
+
+output "jumphost_private_ip" {
+  description = "Private IP address of the Windows jumphost"
+  value       = azurerm_network_interface.jumphost_nic.private_ip_address
+}
+
+output "jumphost_rdp_command" {
+  description = "RDP connection information"
+  value       = "mstsc /v:${azurerm_public_ip.jumphost_public_ip.ip_address}"
+}
+
+output "jumphost_details" {
+  description = "Windows jumphost details"
+  value = {
+    name               = azurerm_windows_virtual_machine.jumphost.name
+    size               = azurerm_windows_virtual_machine.jumphost.size
+    private_ip         = azurerm_network_interface.jumphost_nic.private_ip_address
+    public_ip          = azurerm_public_ip.jumphost_public_ip.ip_address
+    admin_username     = azurerm_windows_virtual_machine.jumphost.admin_username
+    rdp_command        = "mstsc /v:${azurerm_public_ip.jumphost_public_ip.ip_address}"
+    target_vm_ip       = "10.0.1.20"
+    access_instruction = "RDP to this jumphost, then access http://10.0.1.20 from the browser"
+  }
+}
+
+# Private DNS Zone Outputs
+output "private_dns_zone_name" {
+  description = "Name of the private DNS zone"
+  value       = azurerm_private_dns_zone.main.name
+}
+
+output "dns_hostnames" {
+  description = "DNS hostnames for all VMs within the VNet"
+  value = {
+    linux_vms = [
+      for i in range(var.vm_count) : {
+        hostname        = "${var.prefix}-vm${i + 1}.${azurerm_private_dns_zone.main.name}"
+        traffic_hostname = "${var.prefix}-vm${i + 1}-traffic.${azurerm_private_dns_zone.main.name}"
+        management_ip   = azurerm_network_interface.management_nic[i].private_ip_address
+        traffic_ip      = var.vm_traffic_ips[i]
+      }
+    ]
+    jumphost = {
+      hostname    = "jumphost.${azurerm_private_dns_zone.main.name}"
+      private_ip  = var.jumphost_ip
+    }
+    hpevme = {
+      hostname    = "hpevme.${azurerm_private_dns_zone.main.name}"
+      private_ip  = "10.0.1.20"
+      description = "HPE VME nested VM"
+    }
+  }
+}
