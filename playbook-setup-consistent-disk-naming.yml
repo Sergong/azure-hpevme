@@ -1,0 +1,84 @@
+---
+- name: Setup Consistent Azure Disk Naming for Ceph
+  hosts: azure_vms
+  become: yes
+  gather_facts: yes
+
+  tasks:
+    - name: Copy udev setup script to hosts
+      copy:
+        src: setup-azure-disk-udev.sh
+        dest: /tmp/setup-azure-disk-udev.sh
+        mode: '0755'
+        owner: root
+        group: root
+
+    - name: Execute udev setup script
+      shell: /tmp/setup-azure-disk-udev.sh
+      register: udev_setup_result
+
+    - name: Display udev setup results
+      debug:
+        var: udev_setup_result.stdout_lines
+
+    - name: Verify /dev/azure-data exists
+      stat:
+        path: /dev/azure-data
+      register: azure_data_link
+
+    - name: Fail if symlink not created
+      fail:
+        msg: "/dev/azure-data symlink was not created successfully"
+      when: not azure_data_link.stat.exists
+
+    - name: Get real device path
+      shell: readlink -f /dev/azure-data
+      register: real_device
+      changed_when: false
+
+    - name: Get disk information
+      shell: lsblk -o NAME,SIZE,TYPE,MOUNTPOINT $(readlink -f /dev/azure-data)
+      register: disk_info
+      changed_when: false
+
+    - name: Display device mapping
+      debug:
+        msg: |
+          Host: {{ inventory_hostname }}
+          Symlink: /dev/azure-data -> {{ real_device.stdout }}
+          Disk Info:
+          {{ disk_info.stdout }}
+
+    - name: Create summary file
+      copy:
+        content: |
+          Azure Data Disk Configuration
+          =============================
+          Host: {{ inventory_hostname }}
+          Consistent Device: /dev/azure-data
+          Real Device: {{ real_device.stdout }}
+          LUN: 10
+          
+          This symlink is stable and can be used for Ceph OSD configuration.
+          
+          Usage:
+          - For Ceph: ceph-volume lvm create --data /dev/azure-data
+          - Direct access: Use /dev/azure-data instead of /dev/sda or /dev/sdb
+          
+          The underlying device ({{ real_device.stdout }}) may vary between hosts,
+          but /dev/azure-data will always point to the correct LUN 10 data disk.
+        dest: /root/azure-disk-mapping.txt
+        owner: root
+        group: root
+        mode: '0644'
+
+    - name: Display completion message
+      debug:
+        msg: |
+          ✓ Consistent disk naming configured successfully
+          ✓ Use /dev/azure-data for Ceph OSD setup
+          ✓ Configuration saved to /root/azure-disk-mapping.txt
+
+  handlers:
+    - name: reload udev
+      shell: udevadm control --reload-rules && udevadm trigger

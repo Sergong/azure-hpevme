@@ -455,3 +455,29 @@ ip route add default via 10.0.1.10  # Gateway is the KVM host
 ```
 
 See [NESTED-VM-NETWORKING.md](NESTED-VM-NETWORKING.md) for complete details.
+
+## Consistent Disk Naming for Ceph
+
+Azure VMs can have inconsistent device names for data disks:
+- **vme-kvm-vm1**: Data disk is `/dev/sdb`
+- **vme-kvm-vm2**: Data disk is `/dev/sda`
+
+For Ceph OSDs, which require consistent device paths, we use **udev rules** to create stable symlinks:
+
+```bash
+# Setup consistent naming
+ansible-playbook playbook-setup-consistent-disk-naming.yml
+
+# Verify
+ansible azure_vms -m shell -a "ls -la /dev/azure-data"
+```
+
+This creates `/dev/azure-data` on all hosts pointing to the 1TB data disk (LUN 10), regardless of whether the underlying device is `/dev/sda` or `/dev/sdb`.
+
+**For Ceph:**
+```bash
+# Use the stable symlink for OSD creation
+ceph-volume lvm create --data /dev/azure-data
+```
+
+See [CEPH-DISK-SETUP.md](CEPH-DISK-SETUP.md) for complete details.
