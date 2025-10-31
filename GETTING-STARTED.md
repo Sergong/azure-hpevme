@@ -15,6 +15,15 @@ This deployment creates:
 
 ## Prerequisites
 
+### 0. Download the HPE Essentials ISO
+You will need to download the HPE Essentials software ISO (HPE_VM_Essentials_SW_image_v8.0.10_S5Q83-11027.iso) from HPE [Here](https://myenterpriselicense.hpe.com/cwp-ui/product-download-info/HPE_VME_EVAL/-/sw360_eval_customer)
+
+From this ISO you will need to copy the following 2 files into this repo:
+- [ ] hpe-vm-essentials-8.0.10-1.qcow2.gz
+- [ ] hpe-vm_1.0.11-1_amd64.deb
+
+The ansible playbook called `playbook-install-kvm.yml` will use these to upload them the KVM hosts.
+
 ### 1. Install Required Tools
 
 #### Azure CLI
@@ -389,9 +398,16 @@ ansible windows_jumphosts -m win_shell -a "Test-NetConnection -ComputerName 10.0
 ansible windows_jumphosts -m win_shell -a "Test-Path 'C:\\Program Files\\PuTTY\\putty.exe'"
 ```
 
-## Step 6: Verify Complete Deployment
+## Step 6: Deploy HPE VM Essential Manager VM on vme-kvm-vm1 host
+In this step you will need to deploy the HPE VM Essential Manager VM you do this by running the following command on the **vme-kvm-vm1** host:
+```
+sudo hpe-vm
+```
+Refer to the HPE documentation but you should only need to select the `Install VME Manager option` and complete the fields.
 
-### 6.1 DNS Resolution Test
+## Step 7: Verify Complete Deployment
+
+### 7.1 DNS Resolution Test
 
 From your local machine:
 
@@ -412,7 +428,7 @@ ping -c 2 vme-kvm-vm2.hpevme.local
 ping -c 2 jumphost.hpevme.local
 ```
 
-### 6.2 Network Connectivity Test
+### 7.2 Network Connectivity Test
 
 ```bash
 # Test cross-host connectivity
@@ -427,7 +443,7 @@ ping -c 2 8.8.8.8
 curl -I https://www.google.com
 ```
 
-### 6.3 Windows Jumphost RDP Test
+### 7.3 Windows Jumphost RDP Test
 
 From your local machine:
 
@@ -466,9 +482,9 @@ Once connected to the jumphost:
 3. Test connectivity: `ping vme-kvm-vm1-traffic.hpevme.local`
 4. Open PuTTY and connect to `vme-kvm-vm1.hpevme.local`
 
-## Step 7: Create Test Nested VM (Optional)
+## Step 8: Create Test Nested VM (Optional)
 
-### 7.1 Prepare Nested VM Image
+### 8.1 Prepare Nested VM Image
 
 ```bash
 # SSH to vme-kvm-vm1
@@ -486,7 +502,7 @@ cd /data
 gunzip hpe-vm-essentials-8.0.10-1.qcow2.gz
 ```
 
-### 7.2 Create Nested VM
+### 8.2 Create Nested VM
 
 ```bash
 # Create VM with virt-install
@@ -507,7 +523,7 @@ sudo virsh list --all
 sudo virsh console hpevme
 ```
 
-### 7.3 Configure Nested VM Network
+### 8.3 Configure Nested VM Network
 
 Inside the nested VM console:
 
@@ -530,7 +546,7 @@ ping -c 2 8.8.8.8    # Internet
 ping -c 2 google.com # DNS resolution
 ```
 
-### 7.4 Test Nested VM from Jumphost
+### 8.4 Test Nested VM from Jumphost
 
 1. RDP to Windows jumphost
 2. Open browser (Edge/Chrome/Firefox)
