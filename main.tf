@@ -167,37 +167,6 @@ resource "azurerm_private_dns_ptr_record" "jumphost" {
   tags = var.tags
 }
 
-# PTR Record for HPE VME nested VM
-resource "azurerm_private_dns_ptr_record" "hpevme" {
-  name                = "20"
-  zone_name           = azurerm_private_dns_zone.reverse_vm_traffic.name
-  resource_group_name = azurerm_resource_group.main.name
-  ttl                 = 300
-  records             = ["hpevme.${azurerm_private_dns_zone.main.name}"]
-
-  tags = var.tags
-}
-
-# Route Table for nested VMs
-resource "azurerm_route_table" "nested_vm_routes" {
-  name                = "${var.prefix}-nested-vm-routes"
-  location            = azurerm_resource_group.main.location
-  resource_group_name = azurerm_resource_group.main.name
-
-  tags = var.tags
-}
-
-# Routes for nested VMs - direct traffic to respective KVM hosts
-resource "azurerm_route" "nested_vm_route" {
-  count                  = var.vm_count
-  name                   = "${var.prefix}-nested-vm${count.index + 1}-route"
-  resource_group_name    = azurerm_resource_group.main.name
-  route_table_name       = azurerm_route_table.nested_vm_routes.name
-  address_prefix         = var.nested_vm_ip_ranges[count.index]
-  next_hop_type          = "VirtualAppliance"
-  next_hop_in_ip_address = var.vm_traffic_ips[count.index]
-}
-
 # VM Traffic Subnet
 resource "azurerm_subnet" "vm_subnet" {
   name                 = "${var.prefix}-vm-subnet"
@@ -206,11 +175,8 @@ resource "azurerm_subnet" "vm_subnet" {
   address_prefixes     = ["10.0.1.0/24"]
 }
 
-# Associate route table with VM traffic subnet
-resource "azurerm_subnet_route_table_association" "vm_subnet_routes" {
-  subnet_id      = azurerm_subnet.vm_subnet.id
-  route_table_id = azurerm_route_table.nested_vm_routes.id
-}
+
+
 
 # Management Traffic Subnet
 resource "azurerm_subnet" "management_subnet" {
@@ -220,11 +186,7 @@ resource "azurerm_subnet" "management_subnet" {
   address_prefixes     = ["10.0.2.0/24"]
 }
 
-# Associate route table with Management subnet
-resource "azurerm_subnet_route_table_association" "management_subnet_routes" {
-  subnet_id      = azurerm_subnet.management_subnet.id
-  route_table_id = azurerm_route_table.nested_vm_routes.id
-}
+
 
 # Network Security Group
 resource "azurerm_network_security_group" "vm_nsg" {
@@ -241,6 +203,30 @@ resource "azurerm_network_security_group" "vm_nsg" {
     source_port_range          = "*"
     destination_port_range     = "22"
     source_address_prefix      = var.my_public_ip
+    destination_address_prefix = "*"
+  }
+
+  security_rule {
+    name                       = "AllowGRE"
+    priority                   = 1002
+    direction                  = "Inbound"
+    access                     = "Allow"
+    protocol                   = "*"
+    source_port_range          = "*"
+    destination_port_range     = "*"
+    source_address_prefix      = "*"
+    destination_address_prefix = "*"
+  }
+
+  security_rule {
+    name                       = "AllowNestedVMSubnet"
+    priority                   = 1003
+    direction                  = "Inbound"
+    access                     = "Allow"
+    protocol                   = "*"
+    source_port_range          = "*"
+    destination_port_range     = "*"
+    source_address_prefix      = "10.0.1.0/24"
     destination_address_prefix = "*"
   }
 

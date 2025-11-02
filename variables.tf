@@ -36,22 +36,7 @@ variable "vm_traffic_ips" {
   }
 }
 
-variable "nested_vm_ip_ranges" {
-  description = "IP ranges for nested VMs per KVM host (CIDR notation). Each host gets a /28 (16 IPs, ~12 usable)"
-  type        = list(string)
-  default     = [
-    "10.0.1.16/28",   # vme-kvm-vm1: IPs .16-.31 (includes .20)
-    "10.0.1.48/28",   # vme-kvm-vm2: IPs .48-.63
-    "10.0.1.80/28",   # Future host 3: IPs .80-.95
-    "10.0.1.96/28",   # Future host 4: IPs .96-.111
-    "10.0.1.112/28",  # Future host 5: IPs .112-.127
-    "10.0.1.128/28",  # Future host 6: IPs .128-.143
-    "10.0.1.144/28",  # Future host 7: IPs .144-.159
-    "10.0.1.160/28",  # Future host 8: IPs .160-.175
-    "10.0.1.176/28",  # Future host 9: IPs .176-.191
-    "10.0.1.192/28"   # Future host 10: IPs .192-.207
-  ]
-}
+
 
 variable "vm_size" {
   description = "Size of the Virtual Machine (supports nested virtualization)"

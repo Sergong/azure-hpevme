@@ -51,22 +51,12 @@ output "vm_details" {
       public_ip           = azurerm_public_ip.vm_public_ip[i].ip_address
       ssh_command         = "ssh ${vm.admin_username}@${azurerm_public_ip.vm_public_ip[i].ip_address}"
       data_mount_path     = "/data"
-      nested_vm_ip_range  = var.nested_vm_ip_ranges[i]
+      
     }
   ]
 }
 
-output "nested_vm_ip_allocation" {
-  description = "IP ranges allocated for nested VMs on each KVM host"
-  value = {
-    for i in range(var.vm_count) :
-    "${var.prefix}-vm${i + 1}" => {
-      host_ip            = var.vm_traffic_ips[i]
-      nested_vm_range    = var.nested_vm_ip_ranges[i]
-      usable_ips         = "Use IPs from this /28 range for nested VMs on this host"
-    }
-  }
-}
+
 
 # Windows Jumphost Outputs
 output "jumphost_name" {
