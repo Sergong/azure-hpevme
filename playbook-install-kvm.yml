@@ -1,8 +1,8 @@
 ---
 - name: Install KVM, Virtualization Tools, and HPE VM Package
   hosts: azure_vms
-  become: yes
-  gather_facts: yes
+  become: true
+  gather_facts: true
 
   vars:
     kvm_packages:
@@ -39,7 +39,7 @@
         regexp: '^#?PasswordAuthentication\s+'
         line: 'PasswordAuthentication yes'
         state: present
-        backup: yes
+        backup: true
 
     - name: Ensure ChallengeResponseAuthentication is disabled (for clarity)
       ansible.builtin.lineinfile:
@@ -59,11 +59,11 @@
       ansible.builtin.systemd:
         name: ssh
         state: restarted
-        enabled: yes
+        enabled: true
 
     - name: Update apt cache
       ansible.builtin.apt:
-        update_cache: yes
+        update_cache: true
         cache_valid_time: 3600
 
     - name: Install KVM and virtualization packages
@@ -87,13 +87,13 @@
       ansible.builtin.systemd:
         name: libvirtd
         state: started
-        enabled: yes
+        enabled: true
 
     - name: Add admin user to libvirt group
       ansible.builtin.user:
         name: "{{ ansible_user }}"
         groups: libvirt
-        append: yes
+        append: true
 
     - name: Verify KVM installation
       ansible.builtin.command: kvm-ok
@@ -105,133 +105,53 @@
       ansible.builtin.debug:
         msg: "{{ kvm_ok_result.stdout_lines }}"
 
-    # # Configure Static IPs in netplan
-    # - name: Set static IP variables based on hostname
-    #   ansible.builtin.set_fact:
-    #     eth0_ip: "{{ '10.0.2.5/24' if 'vme-kvm-vm1' in inventory_hostname else '10.0.2.4/24' }}"
-    #     eth1_ip: "{{ '10.0.1.10/24' if 'vme-kvm-vm1' in inventory_hostname else '10.0.1.11/24' }}"
-    #     gateway: "10.0.2.1"
-    #     mgmt_gateway: "{{ '10.0.1.10' if 'vme-kvm-vm1' in inventory_hostname else '10.0.1.11' }}"
-    #     nameservers: "168.63.129.16"
+    # Enable IP forwarding for overlay network
+    - name: Enable IP forwarding
+      ansible.posix.sysctl:
+        name: net.ipv4.ip_forward
+        value: '1'
+        state: present
+        sysctl_set: true
+        reload: true
 
-    # - name: Backup original netplan configuration
-    #   ansible.builtin.copy:
-    #     src: /etc/netplan/50-cloud-init.yaml
-    #     dest: /etc/netplan/50-cloud-init.yaml.bak
-    #     remote_src: yes
-    #     force: no
+    - name: Update netplan configuration with OVS bridge
+      ansible.builtin.template:
+        src: netplan-with-ovs.yaml.j2
+        dest: /etc/netplan/99-ovs.yaml
+        mode: '0600'
+        backup: true
+      register: netplan_ovs_config
 
-    # - name: Configure netplan with static IPs (before OVS bridge creation)
-    #   ansible.builtin.template:
-    #     src: netplan-static.yaml.j2
-    #     dest: /etc/netplan/50-cloud-init.yaml
-    #     mode: '0600'
-    #     backup: yes
-    #   register: netplan_config
+    - name: Apply netplan configuration for mgmt bridge # noqa: no-changed-when no-handler
+      ansible.builtin.command: netplan apply
+      when: netplan_ovs_config.changed
 
-    # - name: Apply netplan configuration for static IPs
-    #   ansible.builtin.command: netplan apply
-    #   when: netplan_config.changed
+    # Note: Overlay network routing (192.168.10.0/24 -> 10.0.1.4) is handled by Azure UDR
+    # No manual routes needed on individual hosts - Azure handles this at the subnet level
 
-    # # OVS Bridge Configuration for nested VM networking
-    # - name: Check if OVS mgmt bridge exists
-    #   ansible.builtin.shell: ovs-vsctl list-br | grep -q '^mgmt$'
-    #   register: mgmt_bridge_exists
-    #   failed_when: false
-    #   changed_when: false
+    # Configure NAT for nested VM internet access (gateway host only)
+    - name: Copy NAT setup script for nested VMs
+      ansible.builtin.copy:
+        src: setup-nested-vm-nat.sh
+        dest: /tmp/setup-nested-vm-nat.sh
+        mode: '0755'
+      when: gateway_host is defined and gateway_host
 
-    # - name: Debug return values
-    #   ansible.builtin.debug:
-    #     var: mgmt_bridge_exists
+    - name: Configure NAT for nested VM internet access (gateway host only)
+      ansible.builtin.command: /tmp/setup-nested-vm-nat.sh
+      when: gateway_host is defined and gateway_host
+      register: nat_result
+      changed_when: '"Added MASQUERADE" in nat_result.stdout'
 
-    # - name: Delete mgmt bridge if it exists (for clean state)
-    #   ansible.builtin.command: ovs-vsctl --if-exists del-br mgmt
-    #   when: mgmt_bridge_exists.rc == 0
-
-    # - name: Create OVS mgmt bridge
-    #   ansible.builtin.command: ovs-vsctl add-br mgmt
-    #   register: bridge_created
-
-    # - name: Set Tunnel facts
-    #   ansible.builtin.set_fact:
-    #     local_ip: "{{ '10.0.2.5' if 'vme-kvm-vm1' in inventory_hostname else '10.0.2.4' }}"
-    #     remote_ip: "{{ '10.0.2.4' if 'vme-kvm-vm1' in inventory_hostname else '10.0.2.5' }}"
-    #     tunnel_if: "{{ 'gre-to-host2' if 'vme-kvm-vm1' in inventory_hostname else 'gre-to-host1' }}"
-
-    # - name: Create Kernel GRE tunnel interface
-    #   ansible.builtin.command: ip tunnel add {{ tunnel_if }} mode gre local {{ local_ip }} remote {{ remote_ip }} dev eth0
-    #   register: tunnel_creation
-
-    # - name: Bring up tunnel interface
-    #   ansible.builtin.command: ip link set {{ tunnel_if }} up
-    #   register: tunnel_up
-
-    # - name: Add GRE tunnel to mgmt OVS bridge
-    #   ansible.builtin.command: ovs-vsctl add-port mgmt gre1 -- set interface {{ tunnel_if }} type=gre  options:local_ip={{ local_ip }} options:remote_ip={{ remote_ip }}
-    #   register: gre_to_bridge
-
-    # - name: Check if eth1 is already a port of mgmt bridge
-    #   ansible.builtin.shell: ovs-vsctl list-ports mgmt 2>/dev/null | grep -q '^eth1$'
-    #   register: eth1_in_bridge
-    #   failed_when: false
-    #   changed_when: false
-
-    # - name: Add eth1 port to mgmt bridge if not already added
-    #   ansible.builtin.command: ovs-vsctl add-port mgmt eth1
-    #   when: eth1_in_bridge.rc != 0
-    #   register: port_added
-
-    # - name: Flush IP address from eth1 when adding to bridge
-    #   ansible.builtin.command: ip addr flush dev eth1
-    #   when: port_added.changed
-
-    # - name: Check current IP on mgmt bridge
-    #   ansible.builtin.shell: ip addr show mgmt | grep -q '{{ eth1_ip }}'
-    #   register: mgmt_has_ip
-    #   failed_when: false
-    #   changed_when: false
-
-    # - name: Assign IP address to mgmt bridge if not present
-    #   ansible.builtin.command: ip addr add {{ eth1_ip }} dev mgmt
-    #   when: mgmt_has_ip.rc != 0
-
-    # - name: Ensure mgmt bridge is up
-    #   ansible.builtin.command: ip link set mgmt up
-    #   when: bridge_created.changed or port_added.changed
-
-    # - name: Update netplan configuration with OVS bridge
-    #   ansible.builtin.template:
-    #     src: netplan-with-ovs.yaml.j2
-    #     dest: /etc/netplan/50-cloud-init.yaml
-    #     mode: '0600'
-    #     backup: yes
-    #   register: netplan_ovs_config
-
-    # - name: Apply netplan configuration for mgmt bridge
-    #   ansible.builtin.command: netplan apply
-    #   when: netplan_ovs_config.changed
-
-    # # Configure NAT for nested VM internet access
-    # - name: Copy NAT setup script for nested VMs
-    #   ansible.builtin.copy:
-    #     src: setup-nested-vm-nat.sh
-    #     dest: /tmp/setup-nested-vm-nat.sh
-    #     mode: '0755'
-
-    # - name: Configure NAT for nested VM internet access
-    #   ansible.builtin.command: /tmp/setup-nested-vm-nat.sh
-    #   register: nat_result
-    #   changed_when: '"Added MASQUERADE" in nat_result.stdout'
-
-    # # Note: Using iptables-persistent instead of UFW to preserve libvirt rules
-    # # The NAT and routing scripts already configure necessary iptables rules
-    # - name: Save current iptables rules
-    #   ansible.builtin.command: netfilter-persistent save
-    #   changed_when: false
+    # Note: Using iptables-persistent instead of UFW to preserve libvirt rules
+    # The NAT and routing scripts already configure necessary iptables rules
+    - name: Save current iptables rules
+      ansible.builtin.command: netfilter-persistent save
+      changed_when: false
 
     - name: Tasks for the first Host
       when: '"vme-kvm-vm1" in inventory_hostname'
-      block: 
+      block:
         - name: Uploading HPE VM Essentials Disk to remote host
           ansible.builtin.copy:
             src: "{{ hpe_qcow_local }}"

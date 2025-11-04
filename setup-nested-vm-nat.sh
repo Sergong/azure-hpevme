@@ -7,8 +7,8 @@ set -euo pipefail
 echo "=== Configuring NAT for Nested VM Internet Access ==="
 
 # Network interfaces
-EXTERNAL_IF="eth0"      # Management interface with internet access
-BRIDGE_IF="mgmt"        # OVS bridge for nested VMs
+EXTERNAL_IF="eth0"      # Primary interface with internet access (Azure VNet)
+BRIDGE_IF="mgmt"        # OVS bridge for overlay network (192.168.10.0/24)
 
 # 1. Enable IP forwarding (should already be set, but ensure it)
 echo "Enabling IP forwarding..."
@@ -26,13 +26,13 @@ fi
 echo ""
 echo "Configuring iptables NAT rules..."
 
-# Check if MASQUERADE rule already exists
-if ! iptables -t nat -C POSTROUTING -o "$EXTERNAL_IF" -j MASQUERADE 2>/dev/null; then
-    # MASQUERADE: Makes nested VM traffic appear to come from eth0's IP
-    iptables -t nat -A POSTROUTING -o "$EXTERNAL_IF" -j MASQUERADE
-    echo "[OK] Added MASQUERADE rule for $EXTERNAL_IF"
+# Check if MASQUERADE rule already exists for overlay network
+if ! iptables -t nat -C POSTROUTING -s 192.168.10.0/24 -o "$EXTERNAL_IF" -j MASQUERADE 2>/dev/null; then
+    # MASQUERADE: Makes overlay network traffic appear to come from eth0's IP
+    iptables -t nat -A POSTROUTING -s 192.168.10.0/24 -o "$EXTERNAL_IF" -j MASQUERADE
+    echo "[OK] Added MASQUERADE rule for overlay network (192.168.10.0/24) via $EXTERNAL_IF"
 else
-    echo "[OK] MASQUERADE rule already exists"
+    echo "[OK] MASQUERADE rule for overlay network already exists"
 fi
 
 # Allow forwarding from mgmt bridge to external interface
@@ -51,20 +51,20 @@ else
     echo "[OK] Return traffic rule already exists"
 fi
 
-# Allow forwarding from management subnet (via eth0) to nested VMs (mgmt bridge)
-if ! iptables -C FORWARD -s 10.0.2.0/24 -i "$EXTERNAL_IF" -o "$BRIDGE_IF" -j ACCEPT 2>/dev/null; then
-    iptables -A FORWARD -s 10.0.2.0/24 -i "$EXTERNAL_IF" -o "$BRIDGE_IF" -j ACCEPT
-    echo "[OK] Allow forwarding from management subnet (10.0.2.0/24) to $BRIDGE_IF"
+# Allow forwarding from Azure VNet (via eth0) to overlay network (mgmt bridge)
+if ! iptables -C FORWARD -s 10.0.1.0/24 -i "$EXTERNAL_IF" -o "$BRIDGE_IF" -j ACCEPT 2>/dev/null; then
+    iptables -A FORWARD -s 10.0.1.0/24 -i "$EXTERNAL_IF" -o "$BRIDGE_IF" -j ACCEPT
+    echo "[OK] Allow forwarding from Azure VNet (10.0.1.0/24) to overlay network"
 else
-    echo "[OK] Management subnet forwarding rule already exists"
+    echo "[OK] Azure VNet forwarding rule already exists"
 fi
 
-# Allow return traffic from nested VMs to management subnet
-if ! iptables -C FORWARD -d 10.0.2.0/24 -i "$BRIDGE_IF" -o "$EXTERNAL_IF" -j ACCEPT 2>/dev/null; then
-    iptables -A FORWARD -d 10.0.2.0/24 -i "$BRIDGE_IF" -o "$EXTERNAL_IF" -j ACCEPT
-    echo "[OK] Allow return traffic from $BRIDGE_IF to management subnet"
+# Allow return traffic from overlay network to Azure VNet
+if ! iptables -C FORWARD -d 10.0.1.0/24 -i "$BRIDGE_IF" -o "$EXTERNAL_IF" -j ACCEPT 2>/dev/null; then
+    iptables -A FORWARD -d 10.0.1.0/24 -i "$BRIDGE_IF" -o "$EXTERNAL_IF" -j ACCEPT
+    echo "[OK] Allow return traffic from overlay network to Azure VNet"
 else
-    echo "[OK] Return traffic to management subnet rule already exists"
+    echo "[OK] Return traffic to Azure VNet rule already exists"
 fi
 
 # Allow forwarding within the mgmt bridge (for inter-VM communication)
@@ -109,6 +109,10 @@ iptables -L FORWARD -v -n | grep -E "(mgmt|eth0)" | head -10
 echo ""
 echo "=== NAT Configuration Complete ==="
 echo ""
-echo "Nested VMs should now be able to access the internet through eth0"
-echo "Test from nested VM: ping 8.8.8.8"
+echo "This gateway host (192.168.10.1) provides NAT for the overlay network."
+echo "Overlay network (192.168.10.0/24) can now access:"
+echo "  - Internet via eth0 (with NAT)"
+echo "  - Azure VNet (10.0.1.0/24)"
+echo ""
+echo "Test from Guest VM in overlay network: ping 8.8.8.8"
 echo ""

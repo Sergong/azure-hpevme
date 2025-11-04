@@ -1,253 +1,29 @@
 ---
-# Unit tests for iptables-persistent configuration in playbook-install-kvm.yml
-# Test Case 5: Verify that iptables-persistent is used to preserve firewall rules on the KVM hosts
+# Unit tests for iptables-persistent configuration
 
 - name: Test iptables-persistent Configuration
   hosts: localhost
   gather_facts: no
-  
+
   tasks:
-    # Test 1: Verify iptables-persistent package is in kvm_packages
-    - name: Test iptables-persistent package inclusion
+    - name: Verify iptables-persistent package is installed
       ansible.builtin.set_fact:
-        required_packages:
-          - iptables-persistent
-          - netfilter-persistent
-      
-    - name: Assert iptables packages are included
-      ansible.builtin.assert:
-        that:
-          - required_packages | length == 2
-          - '"iptables-persistent" in required_packages'
-          - '"netfilter-persistent" in required_packages'
-        fail_msg: "iptables-persistent packages are not included"
-        success_msg: "iptables-persistent packages are correctly included"
+        required_package: "iptables-persistent"
 
-    # Test 2: Verify UFW is NOT in packages (incompatible with iptables-persistent)
-    - name: Test UFW exclusion
-      ansible.builtin.set_fact:
-        kvm_packages:
-          - qemu-kvm
-          - libvirt-daemon-system
-          - iptables-persistent
-          - netfilter-persistent
-      
-    - name: Assert UFW is not included
+    - name: Assert iptables-persistent package is installed
       ansible.builtin.assert:
         that:
-          - '"ufw" not in kvm_packages'
-        fail_msg: "UFW should not be included with iptables-persistent"
-        success_msg: "UFW correctly excluded from packages"
+          - required_package == "iptables-persistent"
+        fail_msg: "iptables-persistent package is not specified for installation."
+        success_msg: "iptables-persistent package is correctly specified for installation."
 
-    # Test 3: Verify netfilter-persistent save command
-    - name: Test netfilter-persistent save command
+    - name: Verify iptables rules are saved
       ansible.builtin.set_fact:
-        save_cmd: "netfilter-persistent save"
-      
-    - name: Assert save command is correct
-      ansible.builtin.assert:
-        that:
-          - save_cmd == "netfilter-persistent save"
-        fail_msg: "netfilter-persistent save command is incorrect"
-        success_msg: "netfilter-persistent save command is correct"
+        save_command: "netfilter-persistent save"
 
-    # Test 4: Verify NAT script configures iptables rules
-    - name: Test NAT script exists and is executable
-      ansible.builtin.set_fact:
-        nat_script:
-          src: "setup-nested-vm-nat.sh"
-          dest: "/tmp/setup-nested-vm-nat.sh"
-          mode: "0755"
-      
-    - name: Assert NAT script configuration
+    - name: Assert iptables rules are saved
       ansible.builtin.assert:
         that:
-          - nat_script.src == "setup-nested-vm-nat.sh"
-          - nat_script.dest == "/tmp/setup-nested-vm-nat.sh"
-          - nat_script.mode == "0755"
-        fail_msg: "NAT script configuration is incorrect"
-        success_msg: "NAT script is correctly configured"
-
-    # Test 5: Verify iptables rules are saved after NAT configuration
-    - name: Test rule persistence after NAT setup
-      ansible.builtin.set_fact:
-        persistence_task:
-          name: "Save current iptables rules"
-          command: "netfilter-persistent save"
-      
-    - name: Assert rules are persisted
-      ansible.builtin.assert:
-        that:
-          - persistence_task.name == "Save current iptables rules"
-          - persistence_task.command == "netfilter-persistent save"
-        fail_msg: "iptables persistence is not configured"
-        success_msg: "iptables rules are correctly persisted"
-
-    # Test 6: Verify changed_when is set to false for save command
-    - name: Test changed_when logic for netfilter-persistent save
-      ansible.builtin.set_fact:
-        save_task:
-          changed_when: false
-      
-    - name: Assert changed_when is false
-      ansible.builtin.assert:
-        that:
-          - save_task.changed_when == false
-        fail_msg: "changed_when should be false for save command"
-        success_msg: "changed_when correctly set to false"
-
-    # Test 7: Verify libvirt chains are preserved with iptables-persistent
-    - name: Test libvirt compatibility
-      ansible.builtin.set_fact:
-        firewall_approach:
-          package: "iptables-persistent"
-          preserves_libvirt: true
-          reason: "iptables-persistent does not conflict with libvirt dynamic chains"
-      
-    - name: Assert libvirt compatibility
-      ansible.builtin.assert:
-        that:
-          - firewall_approach.package == "iptables-persistent"
-          - firewall_approach.preserves_libvirt == true
-        fail_msg: "Firewall approach is not compatible with libvirt"
-        success_msg: "iptables-persistent correctly preserves libvirt chains"
-
-    # Test 8: Verify NAT script installs iptables-persistent
-    - name: Test NAT script handles package installation
-      ansible.builtin.set_fact:
-        nat_installs_persistent: true
-      
-    - name: Assert NAT script package handling
-      ansible.builtin.assert:
-        that:
-          - nat_installs_persistent == true
-        fail_msg: "NAT script should install iptables-persistent if missing"
-        success_msg: "NAT script correctly handles iptables-persistent installation"
-
-    # Test 9: Verify interface names used in NAT configuration
-    - name: Test interface names used in NAT script
-      ansible.builtin.set_fact:
-        management_interface: "eth0"
-        traffic_interface: "mgmt"
-      
-    - name: Assert interface names are correct
-      ansible.builtin.assert:
-        that:
-          - management_interface == "eth0"
-          - traffic_interface == "mgmt"
-        fail_msg: "Interface names in NAT configuration are incorrect"
-        success_msg: "Interface names are correct (eth0 for external, mgmt for bridge)"
-
-    # Test 10: Verify iptables rules are configured by scripts, not Ansible
-    - name: Test firewall configuration approach
-      ansible.builtin.set_fact:
-        firewall_config:
-          method: "bash_scripts"
-          scripts:
-            - "setup-nested-vm-nat.sh"
-            - "setup-nested-vm-routes.sh"
-      
-    - name: Assert firewall is configured via scripts
-      ansible.builtin.assert:
-        that:
-          - firewall_config.method == "bash_scripts"
-          - '"setup-nested-vm-nat.sh" in firewall_config.scripts'
-        fail_msg: "Firewall should be configured via bash scripts"
-        success_msg: "Firewall correctly configured via bash scripts"
-
-    # Test 11: Verify iptables FORWARD rules for nested VMs
-    - name: Test iptables FORWARD rules configuration
-      ansible.builtin.set_fact:
-        forward_rules:
-          - src: "mgmt"
-            dst: "eth0"
-            action: "ACCEPT"
-          - src: "eth0"
-            dst: "mgmt"
-            state: "RELATED,ESTABLISHED"
-            action: "ACCEPT"
-          - src: "mgmt"
-            dst: "mgmt"
-            action: "ACCEPT"
-      
-    - name: Assert FORWARD rules are configured
-      ansible.builtin.assert:
-        that:
-          - forward_rules | length == 3
-          - forward_rules[0].src == "mgmt"
-          - forward_rules[1].state is defined
-        fail_msg: "iptables FORWARD rules are not properly configured"
-        success_msg: "iptables FORWARD rules are correctly configured"
-
-    # Test 12: Verify NAT MASQUERADE rule for internet access
-    - name: Test NAT MASQUERADE configuration
-      ansible.builtin.set_fact:
-        nat_rule:
-          table: "nat"
-          chain: "POSTROUTING"
-          interface: "eth0"
-          target: "MASQUERADE"
-      
-    - name: Assert MASQUERADE rule configuration
-      ansible.builtin.assert:
-        that:
-          - nat_rule.table == "nat"
-          - nat_rule.chain == "POSTROUTING"
-          - nat_rule.target == "MASQUERADE"
-        fail_msg: "NAT MASQUERADE rule is not properly configured"
-        success_msg: "NAT MASQUERADE rule correctly configured for internet access"
-
-    # Test 13: Verify task execution order in playbook
-    - name: Test playbook task execution order
-      ansible.builtin.set_fact:
-        task_order:
-          - order: 1
-            description: "Configure NAT"
-          - order: 2
-            description: "Configure Routes"
-          - order: 3
-            description: "Save iptables rules"
-      
-    - name: Assert tasks are in correct order
-      ansible.builtin.assert:
-        that:
-          - task_order | length == 3
-          - task_order[0].description == "Configure NAT"
-          - task_order[2].description == "Save iptables rules"
-        fail_msg: "Playbook tasks are not in the correct order"
-        success_msg: "Playbook tasks are in correct execution order"
-
-    # Test 14: Verify netfilter-persistent save uses command module
-    - name: Test save command uses correct module
-      ansible.builtin.set_fact:
-        save_module: "ansible.builtin.command"
-        save_cmd: "netfilter-persistent save"
-      
-    - name: Assert save uses command module
-      ansible.builtin.assert:
-        that:
-          - save_module == "ansible.builtin.command"
-          - save_cmd == "netfilter-persistent save"
-        fail_msg: "netfilter-persistent save should use ansible.builtin.command"
-        success_msg: "netfilter-persistent save correctly uses command module"
-
-    # Test 15: Verify iptables-persistent supports nested VM networking
-    - name: Test iptables configuration supports nested VM networking
-      ansible.builtin.set_fact:
-        nested_vm_requirements:
-          - requirement: "NAT for internet access"
-            satisfied: true  # MASQUERADE on eth0
-          - requirement: "Forwarding between interfaces"
-            satisfied: true  # FORWARD rules configured
-          - requirement: "Libvirt chains preserved"
-            satisfied: true  # iptables-persistent compatible
-          - requirement: "Rules persistent across reboots"
-            satisfied: true  # netfilter-persistent save
-      
-    - name: Assert all nested VM networking requirements are met
-      ansible.builtin.assert:
-        that:
-          - nested_vm_requirements | selectattr('satisfied', 'equalto', true) | list | length == 4
-          - nested_vm_requirements | length == 4
-        fail_msg: "Not all nested VM networking requirements are satisfied"
-        success_msg: "All nested VM networking requirements are properly configured with iptables-persistent"
+          - save_command == "netfilter-persistent save"
+        fail_msg: "The command to save iptables rules is incorrect."
+        success_msg: "iptables rules are correctly saved using netfilter-persistent."

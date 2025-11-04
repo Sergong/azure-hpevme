@@ -1,0 +1,34 @@
+<domain type='kvm'>
+  <name>{{ vm_name }}</name>
+  <memory unit='KiB'>{{ vm_ram * 1024 }}</memory>
+  <vcpu placement='static'>{{ vm_vcpus }}</vcpu>
+  <os>
+    <type arch='x86_64' machine='q35'>hvm</type>
+    <boot dev='hd'/>
+  </os>
+  <devices>
+    <emulator>/usr/bin/qemu-system-x86_64</emulator>
+    <disk type='file' device='disk'>
+      <driver name='qemu' type='qcow2'/>
+      <source file='{{ vm_disk_path }}'/>
+      <target dev='vda' bus='virtio'/>
+    </disk>
+    <disk type='file' device='cdrom'>
+      <driver name='qemu' type='raw'/>
+      <source file='{{ cloud_init_path }}'/>
+      <target dev='hda' bus='sata'/>
+      <readonly/>
+    </disk>
+    <interface type='bridge'>
+      <source bridge='{{ network_bridge }}'/>
+      <virtualport type='openvswitch'/>
+      <model type='virtio'/>
+    </interface>
+    <console type='pty'>
+      <target type='serial' port='0'/>
+    </console>
+    <graphics type='vnc' port='-1' autoport='yes' listen='127.0.0.1'>
+      <listen type='address' address='127.0.0.1'/>
+    </graphics>
+  </devices>
+</domain>

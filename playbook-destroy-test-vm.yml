@@ -1,0 +1,38 @@
+---
+- name: Destroy and delete Fedora CoreOS Test VM
+  hosts: vme-kvm-vm2
+  become: true
+  gather_facts: false
+
+  vars:
+    vm_name: "fedora-test-vm"
+
+  tasks:
+    - name: Get VM status
+      community.libvirt.virt:
+        name: "{{ vm_name }}"
+        command: info
+      register: vm_info
+
+    - name: Stop the virtual machine to apply changes
+      community.libvirt.virt:
+        name: "{{ vm_name }}"
+        state: shutdown
+      when: 
+        - vm_info[vm_name] is defined
+        - vm_info[vm_name]['state'] == 'running'
+
+    - name: Ensure the virtual machine is undefine
+      community.libvirt.virt:
+        name: "{{ vm_name }}"
+        command: undefine
+      when: 
+        - vm_info[vm_name] is defined
+        
+    - name: Delete VM disk
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - "/var/lib/libvirt/images/{{ vm_name }}-cloud-init.iso"
+        - "/var/lib/libvirt/images/{{ vm_name }}.qcow2"

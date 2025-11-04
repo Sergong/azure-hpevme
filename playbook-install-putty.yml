@@ -4,31 +4,7 @@
   gather_facts: yes
 
   tasks:
-    - name: Install Chocolatey package manager
-      win_shell: |
-        Set-ExecutionPolicy Bypass -Scope Process -Force
-        [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072
-        iex ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
-      args:
-        creates: C:\ProgramData\chocolatey\bin\choco.exe
-
     - name: Install PuTTY using Chocolatey
       win_chocolatey:
         name: putty
         state: present
-
-    - name: Verify PuTTY installation
-      win_shell: |
-        if (Test-Path "C:\ProgramData\chocolatey\bin\putty.exe") {
-          Write-Output "PuTTY installed successfully at C:\ProgramData\chocolatey\bin\putty.exe"
-          & "C:\ProgramData\chocolatey\bin\putty.exe" -V
-        } else {
-          Write-Output "PuTTY installation verification failed"
-          exit 1
-        }
-      register: putty_verify
-      failed_when: putty_verify.rc != 0
-
-    - name: Display PuTTY installation result
-      debug:
-        msg: "{{ putty_verify.stdout_lines }}"

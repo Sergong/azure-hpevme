@@ -26,13 +26,17 @@ variable "vm_count" {
   }
 }
 
-variable "vm_traffic_ips" {
-  description = "Static IP addresses for VM traffic subnet (must be within 10.0.1.0/24)"
+variable "vm_ips" {
+  description = "Static IP addresses for KVM host VMs (must be within 10.0.1.0/24). IMPORTANT: First IP (vm_ips[0]) MUST be 10.0.1.4 as it's used in Azure UDR for overlay network routing."
   type        = list(string)
-  default     = ["10.0.1.10", "10.0.1.11", "10.0.1.12", "10.0.1.13", "10.0.1.14", "10.0.1.15", "10.0.1.16", "10.0.1.17", "10.0.1.18", "10.0.1.19"]
+  default     = ["10.0.1.4", "10.0.1.5"]
   validation {
-    condition     = length(var.vm_traffic_ips) >= 1 && length(var.vm_traffic_ips) <= 10
+    condition     = length(var.vm_ips) >= 1 && length(var.vm_ips) <= 10
     error_message = "Must provide between 1 and 10 IP addresses."
+  }
+  validation {
+    condition     = length(var.vm_ips) >= 1 && var.vm_ips[0] == "10.0.1.4"
+    error_message = "First VM IP (vm_ips[0]) must be 10.0.1.4 for Azure UDR overlay network routing."
   }
 }
 
@@ -68,9 +72,9 @@ variable "tags" {
 
 # Windows Jumphost Variables
 variable "jumphost_ip" {
-  description = "Static IP address for Windows jumphost in management subnet (10.0.2.0/24)"
+  description = "Static IP address for Windows jumphost in VM subnet (10.0.1.0/24)"
   type        = string
-  default     = "10.0.2.100"
+  default     = "10.0.1.200"
 }
 
 variable "jumphost_vm_size" {
@@ -102,4 +106,11 @@ variable "private_dns_zone_name" {
   description = "Name of the private DNS zone for internal name resolution"
   type        = string
   default     = "hpevme.local"
+}
+
+# Optional tag to force re-run of the jumphost OpenSSH VM extension
+variable "openssh_extension_update_tag" {
+  description = "Change this value to force the Custom Script Extension to re-run on the Windows jumphost"
+  type        = string
+  default     = null
 }

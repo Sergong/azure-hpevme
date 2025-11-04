@@ -1,0 +1,175 @@
+---
+- name: Verify VXLAN Overlay Network Configuration
+  hosts: azure_vms
+  become: yes
+  gather_facts: yes
+
+  tasks:
+    - name: Check IP forwarding is enabled
+      ansible.builtin.command: sysctl net.ipv4.ip_forward
+      register: ip_forward
+      changed_when: false
+
+    - name: Display IP forwarding status
+      ansible.builtin.debug:
+        msg: "IP forwarding: {{ ip_forward.stdout }}"
+
+    - name: Verify OVS bridge exists
+      ansible.builtin.command: ovs-vsctl br-exists mgmt
+      register: bridge_check
+      failed_when: false
+      changed_when: false
+
+    - name: Display OVS bridge status
+      ansible.builtin.debug:
+        msg: "OVS mgmt bridge {{ 'EXISTS' if bridge_check.rc == 0 else 'DOES NOT EXIST' }}"
+
+    - name: Get OVS bridge configuration
+      ansible.builtin.command: ovs-vsctl show
+      register: ovs_config
+      changed_when: false
+
+    - name: Display OVS configuration
+      ansible.builtin.debug:
+        msg: "{{ ovs_config.stdout_lines }}"
+
+    - name: Check VXLAN interface exists
+      ansible.builtin.shell: ovs-vsctl list-ports mgmt | grep -q '^vxlan0$'
+      register: vxlan_check
+      failed_when: false
+      changed_when: false
+
+    - name: Display VXLAN interface status
+      ansible.builtin.debug:
+        msg: "VXLAN interface {{ 'EXISTS' if vxlan_check.rc == 0 else 'DOES NOT EXIST' }}"
+
+    - name: Get VXLAN interface details
+      ansible.builtin.command: ovs-vsctl list interface vxlan0
+      register: vxlan_details
+      failed_when: false
+      changed_when: false
+
+    - name: Display VXLAN interface details
+      ansible.builtin.debug:
+        msg: "{{ vxlan_details.stdout_lines }}"
+      when: vxlan_details.rc == 0
+
+    - name: Check mgmt bridge IP address
+      ansible.builtin.command: ip addr show mgmt
+      register: mgmt_ip
+      changed_when: false
+
+    - name: Display mgmt bridge IP
+      ansible.builtin.debug:
+        msg: "{{ mgmt_ip.stdout_lines }}"
+
+    - name: Verify gateway IP on Host 1
+      ansible.builtin.shell: ip addr show mgmt | grep -q '192.168.10.1/24'
+      register: gateway_ip_check
+      failed_when: false
+      changed_when: false
+      when: gateway_host is defined and gateway_host
+
+    - name: Display gateway IP verification result
+      ansible.builtin.debug:
+        msg: "Gateway IP 192.168.10.1 {{ 'IS CONFIGURED' if gateway_ip_check.rc == 0 else 'NOT CONFIGURED' }}"
+      when: gateway_host is defined and gateway_host
+
+    - name: Verify no IP on Host 2 mgmt bridge
+      ansible.builtin.shell: ip addr show mgmt | grep -q 'inet '
+      register: no_ip_check
+      failed_when: false
+      changed_when: false
+      when: gateway_host is not defined or not gateway_host
+
+    - name: Display Host 2 mgmt bridge IP status
+      ansible.builtin.debug:
+        msg: "Host 2 mgmt bridge {{ 'HAS IP (UNEXPECTED)' if no_ip_check.rc == 0 else 'HAS NO IP (CORRECT)' }}"
+      when: gateway_host is not defined or not gateway_host
+
+    - name: Check routing table
+      ansible.builtin.command: ip route show
+      register: routes
+      changed_when: false
+
+    - name: Display routing table
+      ansible.builtin.debug:
+        msg: "{{ routes.stdout_lines }}"
+
+    - name: Check for overlay network route (Azure UDR or kernel)
+      ansible.builtin.shell: ip route show | grep -q '192.168.10.0/24'
+      register: overlay_route_check
+      failed_when: false
+      changed_when: false
+
+    - name: Display overlay route verification
+      ansible.builtin.debug:
+        msg: "Overlay route to gateway {{ 'IS CONFIGURED' if overlay_route_check.rc == 0 else 'NOT CONFIGURED (check Azure UDR)' }}"
+
+    - name: Note about Azure UDR
+      ansible.builtin.debug:
+        msg:
+          - "Note: Overlay network routing is managed by Azure UDR on subnet 10.0.1.0/24"
+          - "Route: 192.168.10.0/24 -> VirtualAppliance 10.0.1.4"
+          - "This applies to all VMs in the subnet (KVM hosts and Jumphost)"
+
+    - name: Test connectivity to remote host (Azure VNet L3)
+      ansible.builtin.command: ping -c 3 {{ remote_host_ip }}
+      register: ping_result
+      failed_when: false
+      changed_when: false
+
+    - name: Display ping results
+      ansible.builtin.debug:
+        msg: "{{ ping_result.stdout_lines }}"
+
+    - name: Check NAT rules on gateway host
+      ansible.builtin.command: iptables -t nat -L POSTROUTING -n -v
+      register: nat_rules
+      changed_when: false
+      when: gateway_host is defined and gateway_host
+
+    - name: Display NAT rules
+      ansible.builtin.debug:
+        msg: "{{ nat_rules.stdout_lines }}"
+      when: gateway_host is defined and gateway_host
+
+    - name: Check FORWARD rules
+      ansible.builtin.command: iptables -L FORWARD -n -v
+      register: forward_rules
+      changed_when: false
+
+    - name: Display FORWARD rules
+      ansible.builtin.debug:
+        msg: "{{ forward_rules.stdout_lines }}"
+
+    - name: Test DNS resolution for private DNS zone
+      ansible.builtin.command: nslookup vme-kvm-vm1.hpevme.local
+      register: dns_test
+      failed_when: false
+      changed_when: false
+
+    - name: Display DNS test results
+      ansible.builtin.debug:
+        msg: "{{ dns_test.stdout_lines }}"
+
+    - name: Summary - Gateway Host
+      ansible.builtin.debug:
+        msg:
+          - "=== Overlay Network Configuration Summary (Gateway Host) ==="
+          - "Private IP: {{ private_ip }}"
+          - "Gateway IP: {{ overlay_gateway_ip }}"
+          - "Remote Host: {{ remote_host_ip }}"
+          - "VXLAN VNI: 10"
+          - "NAT: Enabled for overlay network (192.168.10.0/24)"
+      when: gateway_host is defined and gateway_host
+
+    - name: Summary - Non-Gateway Host
+      ansible.builtin.debug:
+        msg:
+          - "=== Overlay Network Configuration Summary (Non-Gateway Host) ==="
+          - "Private IP: {{ private_ip }}"
+          - "Remote Host: {{ remote_host_ip }}"
+          - "VXLAN VNI: 10"
+          - "Overlay Route: Managed by Azure UDR (192.168.10.0/24 -> 10.0.1.4)"
+      when: gateway_host is not defined or not gateway_host

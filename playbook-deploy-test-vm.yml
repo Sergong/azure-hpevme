@@ -1,0 +1,80 @@
+---
+- name: Deploy Fedora CoreOS Test VM
+  hosts: vme-kvm-vm2
+  become: true
+  gather_facts: false
+
+  vars:
+    vm_name: "fedora-test-vm"
+    vm_ram: 1024
+    vm_vcpus: 1
+    vm_disk_path: "/var/lib/libvirt/images/fedora-test-vm.qcow2"
+    vm_disk_size: "10G"
+    cloud_image_url: "https://fedora.mirrorservice.org/fedora/linux/releases/43/Cloud/x86_64/images/Fedora-Cloud-Base-Generic-43-1.6.x86_64.qcow2"
+    cloud_image_path: "/var/lib/libvirt/images/Fedora-Cloud-Base-Generic-43-1.6.x86_64.qcow2"
+    vm_ip: "192.168.10.30"
+    vm_gateway: "192.168.10.1"
+    vm_dns: "8.8.8.8"
+    network_bridge: "mgmt"
+    cloud_init_path: "/var/lib/libvirt/images/{{ vm_name }}-cloud-init.iso"
+
+  tasks:
+    - name: Download cloud image
+      ansible.builtin.get_url:
+        url: "{{ cloud_image_url }}"
+        dest: "{{ cloud_image_path }}"
+        mode: '0644'
+      register: download_result
+      until: download_result is succeeded
+      retries: 5
+      delay: 10
+
+    - name: Check if VM disk exists
+      ansible.builtin.stat:
+        path: "{{ vm_disk_path }}"
+      register: vm_disk_stat
+
+    - name: Create VM disk from cloud image
+      ansible.builtin.command:
+        cmd: "qemu-img create -f qcow2 -F qcow2 -b {{ cloud_image_path }} {{ vm_disk_path }} {{ vm_disk_size }}"
+      when: not vm_disk_stat.stat.exists
+
+    - name: Create cloud-init user-data
+      ansible.builtin.template:
+        dest: "/tmp/user-data"
+        src: "user-data.j2"
+      vars:
+        ssh_public_key: "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQC6e3zVOWqWN5k+DMKXyMt8qcdzyZdn8uDwTe00nLMz5Dlk1E1R7H4EdXPdgn4QkWCRgcg9zt9RvpIk+ecmZJgSrQXvgXm9lMQcEi1wiukdaYx5DEgNiblR1W5j5cFTW1oUHyAK3mKa3SZ0w5ACzMQxQxowgISa8PWza5mK9koBQ8+0r1xYMyGiZf6DAiKHMbmDfSBQiEUaVilMTfeQE7hIpmtRFj78H5G1ecWWK2b4mHcGGNwyrZXu1uCTvm+j9znv6mC5KPpCeRXQJ+OwpOSZPBWAuQn2ff9aHZq8a1IHm4oW2fzMrTRxPW/KvjJMYaAE3SXhEsq9DeLMmzizkJtHrnjQN8zD0wi2dUd+ujtOdtCYxsMgcTcYzyjz9Hiy6LQFVl77WZ8DeQ3b4N62qQx7sGzdd/q6fqc7CQWvbNm81ekqQY1CITZuo7dR8hYOFuwkqurd+JVg4mG2TD9onYSSZI+ulaMUgLLFgzmlfTMqnNg7crOsAZS+6ruXvOh05X0= smeeuwsen@serge-macmini.local"
+
+    - name: Create cloud-init meta-data
+      ansible.builtin.template:
+        dest: "/tmp/meta-data"
+        src: "meta-data.j2"
+
+    - name: Create cloud-init ISO
+      ansible.builtin.command:
+        cmd: "genisoimage -output {{ cloud_init_path }} -volid cidata -joliet -r /tmp/user-data /tmp/meta-data"
+      args:
+        creates: "{{ cloud_init_path }}"
+
+    - name: Define the virtual machine
+      community.libvirt.virt:
+        command: define
+        xml: "{{ lookup('template', 'vm-template.xml.j2') }}"
+
+    - name: Get VM status
+      community.libvirt.virt:
+        name: "{{ vm_name }}"
+        command: info
+      register: vm_info
+
+    - name: Stop the virtual machine to apply changes
+      community.libvirt.virt:
+        name: "{{ vm_name }}"
+        state: shutdown
+      when: vm_info[vm_name]['state'] == 'running'
+
+    - name: Ensure the virtual machine is started
+      community.libvirt.virt:
+        name: "{{ vm_name }}"
+        state: running

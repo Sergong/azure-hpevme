@@ -48,26 +48,14 @@ resource "azurerm_private_dns_zone_virtual_network_link" "main" {
   tags = var.tags
 }
 
-# DNS A Records for Linux VMs (management IPs)
+# DNS A Records for Linux VMs
 resource "azurerm_private_dns_a_record" "vm" {
   count               = var.vm_count
   name                = "${var.prefix}-vm${count.index + 1}"
   zone_name           = azurerm_private_dns_zone.main.name
   resource_group_name = azurerm_resource_group.main.name
   ttl                 = 300
-  records             = [azurerm_network_interface.management_nic[count.index].private_ip_address]
-
-  tags = var.tags
-}
-
-# DNS A Records for Linux VMs (traffic IPs)
-resource "azurerm_private_dns_a_record" "vm_traffic" {
-  count               = var.vm_count
-  name                = "${var.prefix}-vm${count.index + 1}-traffic"
-  zone_name           = azurerm_private_dns_zone.main.name
-  resource_group_name = azurerm_resource_group.main.name
-  ttl                 = 300
-  records             = [var.vm_traffic_ips[count.index]]
+  records             = [azurerm_network_interface.vm_nic[count.index].private_ip_address]
 
   tags = var.tags
 }
@@ -83,19 +71,19 @@ resource "azurerm_private_dns_a_record" "jumphost" {
   tags = var.tags
 }
 
-# DNS A Record for HPE VME nested VM
+# DNS A Record for example nested VM (in overlay network)
 resource "azurerm_private_dns_a_record" "hpevme" {
   name                = "hpevme"
   zone_name           = azurerm_private_dns_zone.main.name
   resource_group_name = azurerm_resource_group.main.name
   ttl                 = 300
-  records             = ["10.0.1.20"]
+  records             = ["192.168.10.20"]
 
   tags = var.tags
 }
 
-# Reverse DNS Zone for 10.0.1.0/24 (VM traffic subnet)
-resource "azurerm_private_dns_zone" "reverse_vm_traffic" {
+# Reverse DNS Zone for 10.0.1.0/24 (VM subnet)
+resource "azurerm_private_dns_zone" "reverse_vm" {
   name                = "1.0.10.in-addr.arpa"
   resource_group_name = azurerm_resource_group.main.name
 
@@ -103,40 +91,21 @@ resource "azurerm_private_dns_zone" "reverse_vm_traffic" {
 }
 
 # Link Reverse DNS Zone to VNet
-resource "azurerm_private_dns_zone_virtual_network_link" "reverse_vm_traffic_link" {
-  name                  = "${var.prefix}-reverse-vm-traffic-link"
+resource "azurerm_private_dns_zone_virtual_network_link" "reverse_vm_link" {
+  name                  = "${var.prefix}-reverse-vm-link"
   resource_group_name   = azurerm_resource_group.main.name
-  private_dns_zone_name = azurerm_private_dns_zone.reverse_vm_traffic.name
+  private_dns_zone_name = azurerm_private_dns_zone.reverse_vm.name
   virtual_network_id    = azurerm_virtual_network.main.id
   registration_enabled  = false
 
   tags = var.tags
 }
 
-# Reverse DNS Zone for 10.0.2.0/24 (management subnet)
-resource "azurerm_private_dns_zone" "reverse_management" {
-  name                = "2.0.10.in-addr.arpa"
-  resource_group_name = azurerm_resource_group.main.name
-
-  tags = var.tags
-}
-
-# Link Reverse DNS Zone to VNet
-resource "azurerm_private_dns_zone_virtual_network_link" "reverse_management_link" {
-  name                  = "${var.prefix}-reverse-management-link"
-  resource_group_name   = azurerm_resource_group.main.name
-  private_dns_zone_name = azurerm_private_dns_zone.reverse_management.name
-  virtual_network_id    = azurerm_virtual_network.main.id
-  registration_enabled  = false
-
-  tags = var.tags
-}
-
-# PTR Records for Linux VMs (management IPs)
-resource "azurerm_private_dns_ptr_record" "vm_management" {
+# PTR Records for Linux VMs
+resource "azurerm_private_dns_ptr_record" "vm" {
   count               = var.vm_count
-  name                = element(split(".", azurerm_network_interface.management_nic[count.index].private_ip_address), 3)
-  zone_name           = azurerm_private_dns_zone.reverse_management.name
+  name                = element(split(".", azurerm_network_interface.vm_nic[count.index].private_ip_address), 3)
+  zone_name           = azurerm_private_dns_zone.reverse_vm.name
   resource_group_name = azurerm_resource_group.main.name
   ttl                 = 300
   records             = ["${var.prefix}-vm${count.index + 1}.${azurerm_private_dns_zone.main.name}"]
@@ -144,22 +113,10 @@ resource "azurerm_private_dns_ptr_record" "vm_management" {
   tags = var.tags
 }
 
-# PTR Records for Linux VMs (traffic IPs)
-resource "azurerm_private_dns_ptr_record" "vm_traffic" {
-  count               = var.vm_count
-  name                = element(split(".", var.vm_traffic_ips[count.index]), 3)
-  zone_name           = azurerm_private_dns_zone.reverse_vm_traffic.name
-  resource_group_name = azurerm_resource_group.main.name
-  ttl                 = 300
-  records             = ["${var.prefix}-vm${count.index + 1}-traffic.${azurerm_private_dns_zone.main.name}"]
-
-  tags = var.tags
-}
-
 # PTR Record for Windows Jumphost
 resource "azurerm_private_dns_ptr_record" "jumphost" {
   name                = element(split(".", var.jumphost_ip), 3)
-  zone_name           = azurerm_private_dns_zone.reverse_management.name
+  zone_name           = azurerm_private_dns_zone.reverse_vm.name
   resource_group_name = azurerm_resource_group.main.name
   ttl                 = 300
   records             = ["jumphost.${azurerm_private_dns_zone.main.name}"]
@@ -167,7 +124,7 @@ resource "azurerm_private_dns_ptr_record" "jumphost" {
   tags = var.tags
 }
 
-# VM Traffic Subnet
+# VM Subnet (single subnet for all VMs)
 resource "azurerm_subnet" "vm_subnet" {
   name                 = "${var.prefix}-vm-subnet"
   resource_group_name  = azurerm_resource_group.main.name
@@ -175,15 +132,29 @@ resource "azurerm_subnet" "vm_subnet" {
   address_prefixes     = ["10.0.1.0/24"]
 }
 
+# Route Table for overlay network routing
+# IMPORTANT: This route table directs overlay network traffic (192.168.10.0/24) to the gateway host.
+# The next_hop_ip_address MUST match vm_ips[0] which is statically assigned to vme-kvm-vm1.
+resource "azurerm_route_table" "overlay_routes" {
+  name                = "${var.prefix}-overlay-routes"
+  location            = azurerm_resource_group.main.location
+  resource_group_name = azurerm_resource_group.main.name
 
+  # Route overlay network traffic to gateway host (first KVM host)
+  route {
+    name                   = "overlay-network-to-gateway"
+    address_prefix         = "192.168.10.0/24"
+    next_hop_type          = "VirtualAppliance"
+    next_hop_in_ip_address = var.vm_ips[0]  # Must be 10.0.1.4 (validated in variables.tf)
+  }
 
+  tags = var.tags
+}
 
-# Management Traffic Subnet
-resource "azurerm_subnet" "management_subnet" {
-  name                 = "${var.prefix}-management-subnet"
-  resource_group_name  = azurerm_resource_group.main.name
-  virtual_network_name = azurerm_virtual_network.main.name
-  address_prefixes     = ["10.0.2.0/24"]
+# Associate route table with VM subnet
+resource "azurerm_subnet_route_table_association" "vm_subnet_routes" {
+  subnet_id      = azurerm_subnet.vm_subnet.id
+  route_table_id = azurerm_route_table.overlay_routes.id
 }
 
 
@@ -203,18 +174,6 @@ resource "azurerm_network_security_group" "vm_nsg" {
     source_port_range          = "*"
     destination_port_range     = "22"
     source_address_prefix      = var.my_public_ip
-    destination_address_prefix = "*"
-  }
-
-  security_rule {
-    name                       = "AllowGRE"
-    priority                   = 1002
-    direction                  = "Inbound"
-    access                     = "Allow"
-    protocol                   = "*"
-    source_port_range          = "*"
-    destination_port_range     = "*"
-    source_address_prefix      = "*"
     destination_address_prefix = "*"
   }
 
@@ -270,53 +229,30 @@ resource "azurerm_public_ip" "vm_public_ip" {
   tags = var.tags
 }
 
-# VM Traffic Network Interfaces
+# VM Network Interfaces (single NIC per VM with public IP)
+# IMPORTANT: Static IP assignment is REQUIRED. vm_ips[0] = 10.0.1.4 is used in Azure UDR.
 resource "azurerm_network_interface" "vm_nic" {
-  count                = var.vm_count
-  name                 = "${var.prefix}-vm${count.index + 1}-vm-nic"
-  location             = azurerm_resource_group.main.location
-  resource_group_name  = azurerm_resource_group.main.name
-  ip_forwarding_enabled = true
+  count                 = var.vm_count
+  name                  = "${var.prefix}-vm${count.index + 1}-nic"
+  location              = azurerm_resource_group.main.location
+  resource_group_name   = azurerm_resource_group.main.name
+  ip_forwarding_enabled = true  # Required for gateway host to route overlay traffic
 
   ip_configuration {
-    name                          = "vm-traffic"
+    name                          = "primary"
     subnet_id                     = azurerm_subnet.vm_subnet.id
-    private_ip_address_allocation = "Static"
-    private_ip_address            = var.vm_traffic_ips[count.index]
-  }
-
-  tags = var.tags
-}
-
-# Management Network Interfaces
-resource "azurerm_network_interface" "management_nic" {
-  count                = var.vm_count
-  name                 = "${var.prefix}-vm${count.index + 1}-management-nic"
-  location             = azurerm_resource_group.main.location
-  resource_group_name  = azurerm_resource_group.main.name
-  ip_forwarding_enabled = true
-
-  ip_configuration {
-    name                          = "management-traffic"
-    subnet_id                     = azurerm_subnet.management_subnet.id
-    private_ip_address_allocation = "Dynamic"
+    private_ip_address_allocation = "Static"  # MUST be Static - Dynamic IPs would break overlay routing
+    private_ip_address            = var.vm_ips[count.index]  # vm1=10.0.1.4 (gateway), vm2=10.0.1.5
     public_ip_address_id          = azurerm_public_ip.vm_public_ip[count.index].id
   }
 
   tags = var.tags
 }
 
-# Associate Network Security Group to VM Traffic Network Interface
+# Associate Network Security Group to VM Network Interface
 resource "azurerm_network_interface_security_group_association" "vm_nsg_association" {
   count                     = var.vm_count
   network_interface_id      = azurerm_network_interface.vm_nic[count.index].id
-  network_security_group_id = azurerm_network_security_group.vm_nsg.id
-}
-
-# Associate Network Security Group to Management Network Interface
-resource "azurerm_network_interface_security_group_association" "management_nsg_association" {
-  count                     = var.vm_count
-  network_interface_id      = azurerm_network_interface.management_nic[count.index].id
   network_security_group_id = azurerm_network_security_group.vm_nsg.id
 }
 
@@ -356,7 +292,6 @@ resource "azurerm_linux_virtual_machine" "vm" {
   disable_password_authentication = true
 
   network_interface_ids = [
-    azurerm_network_interface.management_nic[count.index].id,
     azurerm_network_interface.vm_nic[count.index].id,
   ]
 
@@ -514,12 +449,13 @@ resource "azurerm_linux_virtual_machine" "vm" {
               echo "Data disk (1TB) available at /data" >> /etc/motd
               
               # Configure DNS search domain for private DNS zone via netplan
-              log "Configuring DNS search domain"
+              log "Configuring DNS search domain and overlay network support"
               
               # Wait for cloud-init network config to complete
               sleep 10
               
               # Add DNS search domain to netplan config
+              # Note: This is initial config; Ansible will reconfigure with static IPs later
               cat > /etc/netplan/99-private-dns.yaml <<'DNS_EOF'
 network:
   version: 2
@@ -534,6 +470,12 @@ DNS_EOF
               chmod 600 /etc/netplan/99-private-dns.yaml
               netplan apply
               log "DNS configuration completed"
+              
+              # Enable IP forwarding for nested VMs and overlay network
+              log "Enabling IP forwarding"
+              sysctl -w net.ipv4.ip_forward=1
+              echo "net.ipv4.ip_forward=1" >> /etc/sysctl.conf
+              log "IP forwarding enabled"
               
               log "Cloud-init script completed"
               EOF
@@ -632,7 +574,7 @@ resource "azurerm_network_interface" "jumphost_nic" {
 
   ip_configuration {
     name                          = "jumphost-config"
-    subnet_id                     = azurerm_subnet.management_subnet.id
+    subnet_id                     = azurerm_subnet.vm_subnet.id
     private_ip_address_allocation = "Static"
     private_ip_address            = var.jumphost_ip
     public_ip_address_id          = azurerm_public_ip.jumphost_public_ip.id
@@ -677,71 +619,51 @@ resource "azurerm_windows_virtual_machine" "jumphost" {
   enable_automatic_updates = true
   patch_mode               = "AutomaticByOS"
 
-  # Install OpenSSH Server for Ansible management
-  custom_data = base64encode(<<-EOF
-    <powershell>
-    # Enable logging
-    Start-Transcript -Path C:\Windows\Temp\openssh-setup.log -Append
-    
-    Write-Host "Installing OpenSSH Server..."
-    
-    # Install OpenSSH Server capability
-    Add-WindowsCapability -Online -Name OpenSSH.Server~~~~0.0.1.0
-    
-    # Start the sshd service
-    Start-Service sshd
-    
-    # Set sshd service to start automatically
-    Set-Service -Name sshd -StartupType 'Automatic'
-    
-    # Confirm the Firewall rule is configured (should be created automatically)
-    if (!(Get-NetFirewallRule -Name "OpenSSH-Server-In-TCP" -ErrorAction SilentlyContinue)) {
-        Write-Host "Creating firewall rule for OpenSSH Server..."
-        New-NetFirewallRule -Name 'OpenSSH-Server-In-TCP' -DisplayName 'OpenSSH Server (sshd)' -Enabled True -Direction Inbound -Protocol TCP -Action Allow -LocalPort 22
-    } else {
-        Write-Host "Firewall rule for OpenSSH Server already exists"
-    }
-    
-    # Configure OpenSSH to use password authentication
-    $sshdConfigPath = "C:\ProgramData\ssh\sshd_config"
-    if (Test-Path $sshdConfigPath) {
-        Write-Host "Configuring sshd_config for password authentication..."
-        $config = Get-Content $sshdConfigPath
-        $config = $config -replace '^#?PasswordAuthentication.*', 'PasswordAuthentication yes'
-        $config = $config -replace '^#?PubkeyAuthentication.*', 'PubkeyAuthentication yes'
-        $config | Set-Content $sshdConfigPath
-        
-        # Restart sshd to apply changes
-        Restart-Service sshd
-    }
-    
-    # Configure default shell to PowerShell (optional, for better Ansible compatibility)
-    New-ItemProperty -Path "HKLM:\SOFTWARE\OpenSSH" -Name DefaultShell -Value "C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe" -PropertyType String -Force
-    
-    Write-Host "Configuring DNS suffix search list..."
-    # Add hpevme.local to DNS suffix search list
-    Set-DnsClientGlobalSetting -SuffixSearchList @("hpevme.local","5q1ivbogeb3eblqguatgczs0gh.bx.internal.cloudapp.net")
-    
-    # Flush DNS cache
-    Clear-DnsClientCache
-    ipconfig /flushdns
-    
-    Write-Host "Configuring Windows Firewall for ICMP..."
-    # Enable ICMP Echo Request for all network profiles
-    Set-NetFirewallRule -DisplayName 'File and Printer Sharing (Echo Request - ICMPv4-In)' -Enabled True -Profile Any
-    
-    Write-Host "OpenSSH Server installation, DNS, and firewall configuration completed"
-    
-    Stop-Transcript
-    </powershell>
-    EOF
-  )
-
-  lifecycle {
-    ignore_changes = [custom_data]
-  }
-
   tags = merge(var.tags, {
     Role = "Jumphost"
   })
+}
+
+# Storage account for scripts
+resource "azurerm_storage_account" "scripts" {
+  name                     = "${replace(var.prefix, "-", "")}scripts${substr(md5(azurerm_resource_group.main.id), 0, 6)}"
+  resource_group_name      = azurerm_resource_group.main.name
+  location                 = azurerm_resource_group.main.location
+  account_tier             = "Standard"
+  account_replication_type = "LRS"
+
+  tags = var.tags
+}
+
+resource "azurerm_storage_container" "scripts" {
+  name                  = "scripts"
+  storage_account_name  = azurerm_storage_account.scripts.name
+  container_access_type = "blob"
+}
+
+resource "azurerm_storage_blob" "openssh_script" {
+  name                   = "setup-openssh.ps1"
+  storage_account_name   = azurerm_storage_account.scripts.name
+  storage_container_name = azurerm_storage_container.scripts.name
+  type                   = "Block"
+  source                 = "${path.module}/scripts/setup-openssh.ps1"
+}
+
+# Windows VM Extension to install and configure OpenSSH Server
+resource "azurerm_virtual_machine_extension" "jumphost_openssh" {
+  name                 = "install-openssh"
+  virtual_machine_id   = azurerm_windows_virtual_machine.jumphost.id
+  publisher            = "Microsoft.Compute"
+  type                 = "CustomScriptExtension"
+  type_handler_version = "1.10"
+
+  settings = jsonencode({
+    fileUris = [azurerm_storage_blob.openssh_script.url]
+  })
+
+  protected_settings = jsonencode({
+    commandToExecute = var.openssh_extension_update_tag != null ? "powershell.exe -ExecutionPolicy Unrestricted -File setup-openssh.ps1 ${var.openssh_extension_update_tag}" : "powershell.exe -ExecutionPolicy Unrestricted -File setup-openssh.ps1"
+  })
+
+  tags = var.tags
 }
