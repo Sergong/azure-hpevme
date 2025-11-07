@@ -126,17 +126,134 @@
         state: started
         enabled: true
 
-    - name: Update netplan configuration with OVS bridge
-      ansible.builtin.template:
-        src: netplan-with-ovs.yaml.j2
-        dest: /etc/netplan/99-ovs.yaml
-        mode: '0600'
-        backup: true
-      register: netplan_ovs_config
+    - name: Create netplan config directory
+      ansible.builtin.file:
+        path: /etc/netplan/configs
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
 
-    - name: Apply netplan configuration for mgmt bridge # noqa: no-changed-when no-handler
-      ansible.builtin.command: netplan apply
-      when: netplan_ovs_config.changed
+    - name: Create hpe-vm compatible netplan config
+      ansible.builtin.copy:
+        dest: /etc/netplan/configs/netplan-hpe-vm-compat.yaml
+        owner: root
+        group: root
+        mode: '0600'
+        content: |
+          network:
+            version: 2
+            ethernets:
+              eth0:
+                dhcp4: false
+                addresses:
+                  - {{ private_ip }}/24
+                routes:
+                  - to: default
+                    via: 10.0.1.1
+                  - to: 168.63.129.16
+                    via: 10.0.1.1
+                nameservers:
+                  addresses:
+                    - 168.63.129.16
+                  search:
+                    - hpevme.local
+              eth1:
+                dhcp4: no
+                dhcp6: no
+            bridges:
+              mgmt:
+                interfaces: [eth1]
+                dhcp4: no
+                dhcp6: no
+          {% if gateway_host is defined and gateway_host %}
+                addresses:
+                  - {{ overlay_gateway_ip }}/24
+          {% endif %}
+                openvswitch: {}
+
+    - name: Create full overlay netplan config
+      ansible.builtin.copy:
+        dest: /etc/netplan/configs/netplan-full-overlay.yaml
+        owner: root
+        group: root
+        mode: '0600'
+        content: |
+          network:
+            version: 2
+            ethernets:
+              eth0:
+                dhcp4: false
+                addresses:
+                  - {{ private_ip }}/24
+                routes:
+                  - to: default
+                    via: 10.0.1.1
+                  - to: 168.63.129.16
+                    via: 10.0.1.1
+                nameservers:
+                  addresses:
+                    - 168.63.129.16
+                  search:
+                    - hpevme.local
+              eth1:
+                dhcp4: no
+                dhcp6: no
+            bridges:
+              mgmt:
+                interfaces: [eth1, vxlan0]
+                dhcp4: no
+                dhcp6: no
+          {% if gateway_host is defined and gateway_host %}
+                addresses:
+                  - {{ overlay_gateway_ip }}/24
+          {% endif %}
+                openvswitch: {}
+            tunnels:
+              vxlan0:
+                mode: vxlan
+                id: 10
+                remote: {{ remote_host_ip }}
+                local: {{ private_ip }}
+                port: 4789
+
+    - name: Create network mode switching script
+      ansible.builtin.copy:
+        dest: /usr/local/bin/switch-network-mode.sh
+        owner: root
+        group: root
+        mode: '0755'
+        content: |
+          #!/bin/bash
+          set -e
+          CONFIG_DIR="/etc/netplan/configs"
+          ACTIVE_CONFIG="/etc/netplan/99-ovs.yaml"
+          if [ "$1" == "hpe-vm" ]; then
+              echo "Switching to hpe-vm compatible network configuration..."
+              if sudo ovs-vsctl list-ports mgmt | grep -q '^vxlan0$'; then
+                  echo "Removing vxlan0 from mgmt bridge..."
+                  sudo ovs-vsctl --if-exists del-port mgmt vxlan0
+              fi
+              if ip link show vxlan0 >/dev/null 2>&1; then
+                  echo "Deleting vxlan0 interface..."
+                  sudo ip link delete vxlan0
+              fi
+              sudo cp "$CONFIG_DIR/netplan-hpe-vm-compat.yaml" "$ACTIVE_CONFIG"
+              sudo netplan apply
+              echo "Done. You can now run the hpe-vm utility."
+          elif [ "$1" == "full" ]; then
+              echo "Switching to full overlay network configuration..."
+              sudo cp "$CONFIG_DIR/netplan-full-overlay.yaml" "$ACTIVE_CONFIG"
+              sudo netplan apply
+              echo "Done. The overlay network is now active."
+          else
+              echo "Usage: $0 [hpe-vm|full]"
+              exit 1
+          fi
+
+    - name: Set network to full overlay mode by default
+      ansible.builtin.command: /usr/local/bin/switch-network-mode.sh full
+      changed_when: false
 
     # Note: Overlay network routing (192.168.10.0/24 -> 10.0.1.4) is handled by Azure UDR
     # No manual routes needed on individual hosts - Azure handles this at the subnet level

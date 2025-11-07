@@ -159,14 +159,7 @@ resource "azurerm_route_table" "overlay_routes" {
   tags = var.tags
 }
 
-# Route Table for the second subnet (no custom routes)
-resource "azurerm_route_table" "no_routes" {
-  name                = "${var.prefix}-no-routes"
-  location            = azurerm_resource_group.main.location
-  resource_group_name = azurerm_resource_group.main.name
 
-  tags = var.tags
-}
 
 # Associate route table with VM subnet
 resource "azurerm_subnet_route_table_association" "vm_subnet_routes" {
@@ -174,11 +167,7 @@ resource "azurerm_subnet_route_table_association" "vm_subnet_routes" {
   route_table_id = azurerm_route_table.overlay_routes.id
 }
 
-# Associate no-routes table with second VM subnet
-resource "azurerm_subnet_route_table_association" "vm_subnet_2_no_routes" {
-  subnet_id      = azurerm_subnet.vm_subnet_2.id
-  route_table_id = azurerm_route_table.no_routes.id
-}
+
 
 
 

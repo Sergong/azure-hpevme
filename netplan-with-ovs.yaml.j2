@@ -15,10 +15,13 @@ network:
           - 168.63.129.16
         search:
           - hpevme.local
+    eth1:
+      dhcp4: no
+      dhcp6: no
 
   bridges:
     mgmt:
-      interfaces: [vxlan0]
+      interfaces: [eth1, vxlan0]
       dhcp4: no
       dhcp6: no
 {% if gateway_host is defined and gateway_host %}
