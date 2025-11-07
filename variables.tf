@@ -36,6 +36,16 @@ variable "vm_traffic_ips" {
   }
 }
 
+variable "vm_management_ips" {
+  description = "Static IP addresses for VM management subnet (must be within 10.0.2.0/24)"
+  type        = list(string)
+  default     = ["10.0.2.5", "10.0.2.4"]
+  validation {
+    condition     = length(var.vm_management_ips) >= 1 && length(var.vm_management_ips) <= 10
+    error_message = "Must provide between 1 and 10 IP addresses."
+  }
+}
+
 variable "nested_vm_ip_ranges" {
   description = "IP ranges for nested VMs per KVM host (CIDR notation). Each host gets a /28 (16 IPs, ~12 usable)"
   type        = list(string)

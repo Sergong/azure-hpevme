@@ -220,12 +220,6 @@ resource "azurerm_subnet" "management_subnet" {
   address_prefixes     = ["10.0.2.0/24"]
 }
 
-# Associate route table with Management subnet
-resource "azurerm_subnet_route_table_association" "management_subnet_routes" {
-  subnet_id      = azurerm_subnet.management_subnet.id
-  route_table_id = azurerm_route_table.nested_vm_routes.id
-}
-
 # Network Security Group
 resource "azurerm_network_security_group" "vm_nsg" {
   name                = "${var.prefix}-vm-nsg"
@@ -313,7 +307,8 @@ resource "azurerm_network_interface" "management_nic" {
   ip_configuration {
     name                          = "management-traffic"
     subnet_id                     = azurerm_subnet.management_subnet.id
-    private_ip_address_allocation = "Dynamic"
+    private_ip_address_allocation = "Static"
+    private_ip_address            = var.vm_management_ips[count.index]
     public_ip_address_id          = azurerm_public_ip.vm_public_ip[count.index].id
   }
 

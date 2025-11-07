@@ -1,8 +1,8 @@
 ---
 - name: Install KVM, Virtualization Tools, and HPE VM Package
   hosts: azure_vms
-  become: yes
-  gather_facts: yes
+  become: true
+  gather_facts: true
 
   vars:
     kvm_packages:
@@ -37,7 +37,7 @@
       ansible.builtin.apt:
         name: openssh-server
         state: present
-        update_cache: yes
+        update_cache: true
         cache_valid_time: 3600
 
     - name: Enable password authentication in sshd_config
@@ -46,7 +46,7 @@
         regexp: '^#?PasswordAuthentication\s+'
         line: 'PasswordAuthentication yes'
         state: present
-        backup: yes
+        backup: true
 
     - name: Ensure ChallengeResponseAuthentication is disabled (for clarity)
       ansible.builtin.lineinfile:
@@ -66,11 +66,11 @@
       ansible.builtin.systemd:
         name: ssh
         state: restarted
-        enabled: yes
+        enabled: true
 
     - name: Update apt cache
       ansible.builtin.apt:
-        update_cache: yes
+        update_cache: true
         cache_valid_time: 3600
 
     - name: Install KVM and virtualization packages
@@ -94,13 +94,13 @@
       ansible.builtin.systemd:
         name: libvirtd
         state: started
-        enabled: yes
+        enabled: true
 
     - name: Add admin user to libvirt group
       ansible.builtin.user:
         name: "{{ ansible_user }}"
         groups: libvirt
-        append: yes
+        append: true
 
     - name: Verify KVM installation
       ansible.builtin.command: kvm-ok
@@ -124,15 +124,15 @@
       ansible.builtin.copy:
         src: /etc/netplan/50-cloud-init.yaml
         dest: /etc/netplan/50-cloud-init.yaml.bak
-        remote_src: yes
-        force: no
+        remote_src: true
+        force: false
 
     - name: Configure netplan with static IPs (before OVS bridge creation)
       ansible.builtin.template:
         src: netplan-static.yaml.j2
         dest: /etc/netplan/50-cloud-init.yaml
         mode: '0600'
-        backup: yes
+        backup: true
       register: netplan_config
 
     - name: Apply netplan configuration for static IPs
@@ -140,6 +140,12 @@
       when: netplan_config.changed
 
     # OVS Bridge Configuration for nested VM networking
+    - name: Ensure openvswitch-switch service is started and enabled
+      ansible.builtin.systemd:
+        name: openvswitch-switch
+        state: started
+        enabled: true
+
     - name: Check if OVS mgmt bridge exists
       ansible.builtin.shell: ovs-vsctl list-br | grep -q '^mgmt$'
       register: mgmt_bridge_exists
@@ -186,9 +192,9 @@
     - name: Update netplan configuration with OVS bridge
       ansible.builtin.template:
         src: netplan-with-ovs.yaml.j2
-        dest: /etc/netplan/50-cloud-init.yaml
+        dest: /etc/netplan/99-ovs.yaml
         mode: '0600'
-        backup: yes
+        backup: true
       register: netplan_ovs_config
 
     - name: Apply netplan configuration for mgmt bridge
@@ -225,11 +231,11 @@
       ansible.builtin.command: netfilter-persistent save
       changed_when: false
 
-    - name: Tasks for the first Host
-      when: '"vme-kvm-vm1" in inventory_hostname'
-      block: 
-        - name: Uploading HPE VM Essentials Disk to remote host
-          ansible.builtin.copy:
-            src: "{{ hpe_qcow_local }}"
-            dest: "{{ hpe_qcow_remote }}"
-            mode: '0644'
+    # - name: Tasks for the first Host
+    #   when: '"vme-kvm-vm1" in inventory_hostname'
+    #   block:
+    #     - name: Uploading HPE VM Essentials Disk to remote host
+    #       ansible.builtin.copy:
+    #         src: "{{ hpe_qcow_local }}"
+    #         dest: "{{ hpe_qcow_remote }}"
+    #         mode: '0644'
