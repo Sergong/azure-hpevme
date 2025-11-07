@@ -1,10 +1,10 @@
 ---
 - name: Install PuTTY on Windows Jumphost
   hosts: windows_jumphosts
-  gather_facts: yes
+  gather_facts: true
 
   tasks:
     - name: Install PuTTY using Chocolatey
-      win_chocolatey:
+      chocolatey.chocolatey.win_chocolatey:
         name: putty
         state: present

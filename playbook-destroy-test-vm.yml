@@ -18,7 +18,7 @@
       community.libvirt.virt:
         name: "{{ vm_name }}"
         state: shutdown
-      when: 
+      when:
         - vm_info[vm_name] is defined
         - vm_info[vm_name]['state'] == 'running'
 
@@ -26,9 +26,9 @@
       community.libvirt.virt:
         name: "{{ vm_name }}"
         command: undefine
-      when: 
+      when:
         - vm_info[vm_name] is defined
-        
+
     - name: Delete VM disk
       ansible.builtin.file:
         path: "{{ item }}"

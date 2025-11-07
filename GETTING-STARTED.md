@@ -22,14 +22,20 @@ A diagram of the infrastructure being deployed is shown in the following image.
 
 ## Prerequisites
 
-### 1. Required Tools
+### 1. Required Tools / Software
 
 - **Azure CLI**: [Installation Guide](https://docs.microsoft.com/en-us/cli/azure/install-azure-cli)
 - **Ansible**: [Installation Guide](https://docs.ansible.com/ansible/latest/installation_guide/intro_installation.html)
 - **Terraform**: [Installation Guide](https://learn.hashicorp.com/tutorials/terraform/install-cli)
 OR
 - **OpenTofu**: [Installation Guide](https://opentofu.org/docs/intro/install/)
+- **HPE VM Essentials**: [Installation Guide](https://support.hpe.com/hpesc/public/docDisplay?docId=sd00006775en_us&page=GUID-B96D6475-9834-4E0F-A08B-CB97F532B786.html) You will need to download the `HPE_VM_Essentials_SW_image_vX.X.XX_NNNNN-ZZZZZ.iso` ISO and extract the following files from it and store them in the root of this repo:
+  - [ ] `hpe-vm-essentials-X.X.XX-x.qcow2.gz`
+  - [ ] `hpe-vm_X.X.XX-x_amd64.deb`
 
+    Replacing X with the correct version number
+
+> **NOTE** when using OpenToFu, use the `tofu` command rather than the `terraform` command!
 
 ### 2. Azure Authentication
 
@@ -94,11 +100,24 @@ curl -s https://api.ipify.org
 
 2.  **Configure Ansible Vault** to securely store the Windows jumphost password. See the [Ansible Vault documentation](https://docs.ansible.com/ansible/latest/user_guide/vault.html) for more information.
 
-3.  **Run the main playbook** to configure the KVM hosts:
+3. **Ensure correct ansible collections** are installed to be able to run all the playbooks
+   ```
+    ansible-galaxy collection install -r requirements.yml
+   ```
+
+6. **Confirm SSH** is working correctly
+   - Ensure that you can log in with the account you specified for the Ubuntu hosts (`admin_username`) and using the SSH Keys (`ssh_public_key_path`) you specified in the `terraform.tfvars` file and ensure you allow/trust the SSH Key when prompted.
+
+7.  **Run the main playbook** to configure the KVM hosts:
     ```bash
     ansible-playbook playbook-install-kvm.yml
     ```
     This playbook will install KVM, Open vSwitch, and configure the VXLAN overlay network using `netplan`.
+
+8. Run the Windows Playbook to install putty (optional)
+   ```
+   ansible-playbook playbook-install-putty.yml
+   ```
 
 ## Step 4: Verify the Deployment
 

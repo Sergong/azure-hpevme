@@ -33,6 +33,17 @@
     hpe_qcow_remote: "/tmp/hpe-vm-essentials-8.0.10-1.qcow2.gz"
 
   tasks:
+    - name: Update apt cache
+      ansible.builtin.apt:
+        update_cache: true
+        cache_valid_time: 3600
+
+    # - name: Update All packages # noqa: package-latest
+    #   ansible.builtin.apt:
+    #     name: '*'
+    #     state: latest
+    #   notify: Reboot host
+
     - name: Enable password authentication in sshd_config
       ansible.builtin.lineinfile:
         path: /etc/ssh/sshd_config
@@ -40,6 +51,7 @@
         line: 'PasswordAuthentication yes'
         state: present
         backup: true
+      notify: Restart sshd
 
     - name: Ensure ChallengeResponseAuthentication is disabled (for clarity)
       ansible.builtin.lineinfile:
@@ -47,6 +59,7 @@
         regexp: '^#?ChallengeResponseAuthentication\s+'
         line: 'ChallengeResponseAuthentication no'
         state: present
+      notify: Restart sshd
 
     - name: Ensure UsePAM is enabled (required for password auth)
       ansible.builtin.lineinfile:
@@ -54,17 +67,10 @@
         regexp: '^#?UsePAM\s+'
         line: 'UsePAM yes'
         state: present
+      notify: Restart sshd
 
-    - name: Restart sshd to apply changes
-      ansible.builtin.systemd:
-        name: ssh
-        state: restarted
-        enabled: true
-
-    - name: Update apt cache
-      ansible.builtin.apt:
-        update_cache: true
-        cache_valid_time: 3600
+    - name: Force all notified handlers to run at this point
+      ansible.builtin.meta: flush_handlers
 
     - name: Install KVM and virtualization packages
       ansible.builtin.apt:
@@ -114,6 +120,12 @@
         sysctl_set: true
         reload: true
 
+    - name: Ensure openvswitch-switch service is started and enabled
+      ansible.builtin.systemd:
+        name: openvswitch-switch
+        state: started
+        enabled: true
+
     - name: Update netplan configuration with OVS bridge
       ansible.builtin.template:
         src: netplan-with-ovs.yaml.j2
@@ -149,11 +161,22 @@
       ansible.builtin.command: netfilter-persistent save
       changed_when: false
 
-    - name: Tasks for the first Host
-      when: '"vme-kvm-vm1" in inventory_hostname'
-      block:
-        - name: Uploading HPE VM Essentials Disk to remote host
-          ansible.builtin.copy:
-            src: "{{ hpe_qcow_local }}"
-            dest: "{{ hpe_qcow_remote }}"
-            mode: '0644'
+    # - name: Tasks for the first Host
+    #   when: '"vme-kvm-vm1" in inventory_hostname'
+    #   block:
+    #     - name: Uploading HPE VM Essentials Disk to remote host
+    #       ansible.builtin.copy:
+    #         src: "{{ hpe_qcow_local }}"
+    #         dest: "{{ hpe_qcow_remote }}"
+    #         mode: '0644'
+
+
+  handlers:
+    - name: Restart sshd
+      ansible.builtin.systemd:
+        name: ssh
+        state: restarted
+        enabled: true
+
+    - name: Reboot host
+      ansible.builtin.reboot:

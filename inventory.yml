@@ -4,7 +4,7 @@ all:
     azure_vms:
       hosts:
         vme-kvm-vm1:
-          ansible_host: 172.191.189.160
+          ansible_host: 20.39.34.115
           ansible_user: adm_smeeuwsen
           private_ip: 10.0.1.4
           gateway_host: true
@@ -13,7 +13,7 @@ all:
           data_mount_path: /data
           vm_size: Standard_E4as_v5
         vme-kvm-vm2:
-          ansible_host: 74.235.30.115
+          ansible_host: 172.191.60.75
           ansible_user: adm_smeeuwsen
           private_ip: 10.0.1.5
           gateway_host: false
@@ -29,7 +29,7 @@ all:
     windows_jumphosts:
       hosts:
         vme-kvm-jumphost:
-          ansible_host: 172.191.182.168
+          ansible_host: 172.191.247.126
           ansible_user: azureadmin
           ansible_connection: ssh
           ansible_shell_type: powershell

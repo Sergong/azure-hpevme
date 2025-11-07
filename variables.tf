@@ -40,6 +40,16 @@ variable "vm_ips" {
   }
 }
 
+variable "vm_ips_2" {
+  description = "Static IP addresses for the second NIC of KVM host VMs (must be within 10.0.2.0/24)."
+  type        = list(string)
+  default     = ["10.0.2.4", "10.0.2.5"]
+  validation {
+    condition     = length(var.vm_ips_2) >= 1 && length(var.vm_ips_2) <= 10
+    error_message = "Must provide between 1 and 10 IP addresses for the second NIC."
+  }
+}
+
 
 
 variable "vm_size" {

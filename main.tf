@@ -132,6 +132,14 @@ resource "azurerm_subnet" "vm_subnet" {
   address_prefixes     = ["10.0.1.0/24"]
 }
 
+# VM Subnet 2 (for second NIC)
+resource "azurerm_subnet" "vm_subnet_2" {
+  name                 = "${var.prefix}-vm-subnet-2"
+  resource_group_name  = azurerm_resource_group.main.name
+  virtual_network_name = azurerm_virtual_network.main.name
+  address_prefixes     = ["10.0.2.0/24"]
+}
+
 # Route Table for overlay network routing
 # IMPORTANT: This route table directs overlay network traffic (192.168.10.0/24) to the gateway host.
 # The next_hop_ip_address MUST match vm_ips[0] which is statically assigned to vme-kvm-vm1.
@@ -151,10 +159,25 @@ resource "azurerm_route_table" "overlay_routes" {
   tags = var.tags
 }
 
+# Route Table for the second subnet (no custom routes)
+resource "azurerm_route_table" "no_routes" {
+  name                = "${var.prefix}-no-routes"
+  location            = azurerm_resource_group.main.location
+  resource_group_name = azurerm_resource_group.main.name
+
+  tags = var.tags
+}
+
 # Associate route table with VM subnet
 resource "azurerm_subnet_route_table_association" "vm_subnet_routes" {
   subnet_id      = azurerm_subnet.vm_subnet.id
   route_table_id = azurerm_route_table.overlay_routes.id
+}
+
+# Associate no-routes table with second VM subnet
+resource "azurerm_subnet_route_table_association" "vm_subnet_2_no_routes" {
+  subnet_id      = azurerm_subnet.vm_subnet_2.id
+  route_table_id = azurerm_route_table.no_routes.id
 }
 
 
@@ -249,10 +272,35 @@ resource "azurerm_network_interface" "vm_nic" {
   tags = var.tags
 }
 
+# VM Network Interfaces 2 (second NIC per VM)
+resource "azurerm_network_interface" "vm_nic_2" {
+  count                 = var.vm_count
+  name                  = "${var.prefix}-vm${count.index + 1}-nic-2"
+  location              = azurerm_resource_group.main.location
+  resource_group_name   = azurerm_resource_group.main.name
+  ip_forwarding_enabled = true
+
+  ip_configuration {
+    name                          = "secondary"
+    subnet_id                     = azurerm_subnet.vm_subnet_2.id
+    private_ip_address_allocation = "Static"
+    private_ip_address            = var.vm_ips_2[count.index]
+  }
+
+  tags = var.tags
+}
+
 # Associate Network Security Group to VM Network Interface
 resource "azurerm_network_interface_security_group_association" "vm_nsg_association" {
   count                     = var.vm_count
   network_interface_id      = azurerm_network_interface.vm_nic[count.index].id
+  network_security_group_id = azurerm_network_security_group.vm_nsg.id
+}
+
+# Associate Network Security Group to second VM Network Interface
+resource "azurerm_network_interface_security_group_association" "vm_nsg_association_2" {
+  count                     = var.vm_count
+  network_interface_id      = azurerm_network_interface.vm_nic_2[count.index].id
   network_security_group_id = azurerm_network_security_group.vm_nsg.id
 }
 
@@ -293,6 +341,7 @@ resource "azurerm_linux_virtual_machine" "vm" {
 
   network_interface_ids = [
     azurerm_network_interface.vm_nic[count.index].id,
+    azurerm_network_interface.vm_nic_2[count.index].id,
   ]
 
   admin_ssh_key {
