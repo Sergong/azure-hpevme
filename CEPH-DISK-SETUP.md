@@ -88,6 +88,9 @@ ansible azure_vms -m shell -a "cat /root/azure-disk-mapping.txt"
 
 ## Using with Ceph
 
+> **Important Note**: To be able to use Ceph, you need at least 3 nodes.
+
+
 ### Ceph OSD Creation
 
 Use the **stable symlink** `/dev/azure-data` for all Ceph operations:

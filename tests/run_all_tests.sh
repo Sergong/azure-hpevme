@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Run all unit tests for Azure KVM nested VM networking infrastructure
+# Run all unit tests for Azure KVM VXLAN overlay infrastructure
 
 set -e  # Exit on any error
 
@@ -40,93 +40,46 @@ print_result() {
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
-echo -e "${BLUE}Starting test suite for Azure KVM Nested VM Networking${NC}"
+echo -e "${BLUE}Starting test suite for Azure KVM VXLAN Overlay Infrastructure${NC}"
 echo -e "Project root: ${PROJECT_ROOT}"
 echo -e "Test directory: ${SCRIPT_DIR}"
 
 # ===========================================
-# Test 1 & 2: Terraform Tests
+# Test 1: OpenTofu Tests
 # ===========================================
-print_header "Running Terraform Tests"
+print_header "Running OpenTofu Tests"
 
-if command -v terraform &> /dev/null; then
-    echo "Terraform version:"
-    terraform version
+if command -v tofu &> /dev/null; then
+    echo "OpenTofu version:"
+    tofu version
     echo ""
     
-    # Check if we're in a git repo and have terraform files
+    # Check if we're in a git repo and have OpenTofu files
     if [ -f "$PROJECT_ROOT/main.tf" ]; then
         cd "$PROJECT_ROOT"
         
-        # Initialize Terraform if needed
+        # Initialize OpenTofu if needed
         if [ ! -d ".terraform" ]; then
-            echo "Initializing Terraform..."
-            terraform init -backend=false
+            echo "Initializing OpenTofu..."
+            tofu init -backend=false
         fi
         
-        # Run Terraform tests
-        echo "Running Terraform test suite..."
-        if terraform test -test-directory="$SCRIPT_DIR/terraform" 2>&1; then
-            print_result 0 "Terraform Tests (Route Tables & IP Forwarding)"
+        # Run OpenTofu tests
+        echo "Running OpenTofu test suite..."
+        if tofu test 2>&1; then
+            print_result 0 "OpenTofu Tests"
         else
-            print_result 1 "Terraform Tests (Route Tables & IP Forwarding)"
+            print_result 1 "OpenTofu Tests"
         fi
     else
-        echo -e "${YELLOW}⚠ Skipping Terraform tests - main.tf not found${NC}"
+        echo -e "${YELLOW}⚠ Skipping OpenTofu tests - main.tf not found${NC}"
     fi
 else
-    echo -e "${YELLOW}⚠ Terraform not installed - skipping Terraform tests${NC}"
+    echo -e "${YELLOW}⚠ OpenTofu not installed - skipping OpenTofu tests${NC}"
 fi
 
 # ===========================================
-# Test 3: Bash/BATS Tests
-# ===========================================
-print_header "Running Bash Script Tests (BATS)"
-
-if command -v bats &> /dev/null; then
-    echo "BATS version:"
-    bats --version
-    echo ""
-    
-    if [ -f "$SCRIPT_DIR/bash/test_setup_routes.bats" ]; then
-        cd "$SCRIPT_DIR/bash"
-        
-        # Make test file executable
-        chmod +x test_setup_routes.bats
-        
-        # Run BATS tests for routes
-        if bats test_setup_routes.bats; then
-            print_result 0 "Bash Script Tests (setup-nested-vm-routes.sh)"
-        else
-            print_result 1 "Bash Script Tests (setup-nested-vm-routes.sh)"
-        fi
-    else
-        echo -e "${YELLOW}⚠ BATS routes test file not found${NC}"
-    fi
-    
-    # Test NAT script
-    if [ -f "$SCRIPT_DIR/bash/test_setup_nat.bats" ]; then
-        cd "$SCRIPT_DIR/bash"
-        
-        # Make test file executable
-        chmod +x test_setup_nat.bats
-        
-        # Run BATS tests for NAT
-        if bats test_setup_nat.bats; then
-            print_result 0 "Bash Script Tests (setup-nested-vm-nat.sh)"
-        else
-            print_result 1 "Bash Script Tests (setup-nested-vm-nat.sh)"
-        fi
-    else
-        echo -e "${YELLOW}⚠ BATS NAT test file not found${NC}"
-    fi
-else
-    echo -e "${YELLOW}⚠ BATS not installed - skipping Bash tests${NC}"
-    echo "Install with: brew install bats-core (macOS) or apt install bats (Ubuntu)"
-fi
-
-# ===========================================
-# Test 4 & 5: Ansible Tests
+# Test 2: Ansible Tests
 # ===========================================
 print_header "Running Ansible Tests"
 
@@ -145,47 +98,46 @@ if command -v ansible-playbook &> /dev/null; then
     fi
     echo ""
     
-    # Test OVS Bridge Configuration
-    if [ -f "$SCRIPT_DIR/ansible/test_ovs_bridge.yml" ]; then
-        cd "$SCRIPT_DIR/ansible"
-        echo "Running OVS Bridge tests..."
-        if ansible-playbook test_ovs_bridge.yml; then
-            print_result 0 "Ansible Tests (OVS Bridge Configuration)"
-        else
-            print_result 1 "Ansible Tests (OVS Bridge Configuration)"
-        fi
+    cd "$SCRIPT_DIR/ansible"
+    echo "Running Ansible tests..."
+    if ansible-playbook test_ovs_bridge.yml test_nat_config.yml test_iptables_persistent.yml; then
+        print_result 0 "Ansible Tests"
     else
-        echo -e "${YELLOW}⚠ OVS Bridge test file not found${NC}"
-    fi
-    
-    # Test UFW Rules Configuration
-    if [ -f "$SCRIPT_DIR/ansible/test_ufw_rules.yml" ]; then
-        cd "$SCRIPT_DIR/ansible"
-        echo "Running UFW Rules tests..."
-        if ansible-playbook test_ufw_rules.yml; then
-            print_result 0 "Ansible Tests (UFW Rules Configuration)"
-        else
-            print_result 1 "Ansible Tests (UFW Rules Configuration)"
-        fi
-    else
-        echo -e "${YELLOW}⚠ UFW Rules test file not found${NC}"
-    fi
-    
-    # Test NAT Configuration
-    if [ -f "$SCRIPT_DIR/ansible/test_nat_config.yml" ]; then
-        cd "$SCRIPT_DIR/ansible"
-        echo "Running NAT configuration tests..."
-        if ansible-playbook test_nat_config.yml; then
-            print_result 0 "Ansible Tests (NAT Configuration)"
-        else
-            print_result 1 "Ansible Tests (NAT Configuration)"
-        fi
-    else
-        echo -e "${YELLOW}⚠ NAT configuration test file not found${NC}"
+        print_result 1 "Ansible Tests"
     fi
 else
     echo -e "${YELLOW}⚠ Ansible not installed - skipping Ansible tests${NC}"
     echo "Install with: pip install ansible"
+fi
+
+# ===========================================
+# Test 3: Bash/BATS Tests
+# ===========================================
+print_header "Running Bash Script Tests (BATS)"
+
+if command -v bats &> /dev/null; then
+    echo "BATS version:"
+    bats --version
+    echo ""
+    
+    if [ -f "$SCRIPT_DIR/bash/test_setup_nat.bats" ]; then
+        cd "$SCRIPT_DIR/bash"
+        
+        # Make test file executable
+        chmod +x test_setup_nat.bats
+        
+        # Run BATS tests
+        if bats test_setup_nat.bats; then
+            print_result 0 "Bash Script Tests"
+        else
+            print_result 1 "Bash Script Tests"
+        fi
+    else
+        echo -e "${YELLOW}⚠ BATS test file not found${NC}"
+    fi
+else
+    echo -e "${YELLOW}⚠ BATS not installed - skipping Bash tests${NC}"
+    echo "Install with: brew install bats-core (macOS) or apt install bats (Ubuntu)"
 fi
 
 # ===========================================

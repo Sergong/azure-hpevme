@@ -4,19 +4,36 @@ network:
     eth0:
       dhcp4: false
       addresses:
-        - {{ eth0_ip }}
+        - {{ private_ip }}/24
       routes:
         - to: default
-          via: {{ gateway }}
+          via: 10.0.1.1
+        - to: 168.63.129.16
+          via: 10.0.1.1
       nameservers:
         addresses:
-          - {{ nameservers }}
+          - 168.63.129.16
+        search:
+          - hpevme.local
     eth1:
-      dhcp4: false
+      dhcp4: no
+      dhcp6: no
+
   bridges:
     mgmt:
+      interfaces: [eth1, vxlan0]
+      dhcp4: no
+      dhcp6: no
+{% if gateway_host is defined and gateway_host %}
       addresses:
-        - {{ eth1_ip }}
-      interfaces:
-        - eth1
+        - {{ overlay_gateway_ip }}/24
+{% endif %}
       openvswitch: {}
+
+  tunnels:
+    vxlan0:
+      mode: vxlan
+      id: 10
+      remote: {{ remote_host_ip }}
+      local: {{ private_ip }}
+      port: 4789

@@ -26,42 +26,31 @@ variable "vm_count" {
   }
 }
 
-variable "vm_traffic_ips" {
-  description = "Static IP addresses for VM traffic subnet (must be within 10.0.1.0/24)"
+variable "vm_ips" {
+  description = "Static IP addresses for KVM host VMs (must be within 10.0.1.0/24). IMPORTANT: First IP (vm_ips[0]) MUST be 10.0.1.4 as it's used in Azure UDR for overlay network routing."
   type        = list(string)
-  default     = ["10.0.1.10", "10.0.1.11", "10.0.1.12", "10.0.1.13", "10.0.1.14", "10.0.1.15", "10.0.1.16", "10.0.1.17", "10.0.1.18", "10.0.1.19"]
+  default     = ["10.0.1.4", "10.0.1.5"]
   validation {
-    condition     = length(var.vm_traffic_ips) >= 1 && length(var.vm_traffic_ips) <= 10
+    condition     = length(var.vm_ips) >= 1 && length(var.vm_ips) <= 10
     error_message = "Must provide between 1 and 10 IP addresses."
+  }
+  validation {
+    condition     = length(var.vm_ips) >= 1 && var.vm_ips[0] == "10.0.1.4"
+    error_message = "First VM IP (vm_ips[0]) must be 10.0.1.4 for Azure UDR overlay network routing."
   }
 }
 
-variable "vm_management_ips" {
-  description = "Static IP addresses for VM management subnet (must be within 10.0.2.0/24)"
+variable "vm_ips_2" {
+  description = "Static IP addresses for the second NIC of KVM host VMs (must be within 10.0.2.0/24)."
   type        = list(string)
-  default     = ["10.0.2.5", "10.0.2.4"]
+  default     = ["10.0.2.4", "10.0.2.5"]
   validation {
-    condition     = length(var.vm_management_ips) >= 1 && length(var.vm_management_ips) <= 10
-    error_message = "Must provide between 1 and 10 IP addresses."
+    condition     = length(var.vm_ips_2) >= 1 && length(var.vm_ips_2) <= 10
+    error_message = "Must provide between 1 and 10 IP addresses for the second NIC."
   }
 }
 
-variable "nested_vm_ip_ranges" {
-  description = "IP ranges for nested VMs per KVM host (CIDR notation). Each host gets a /28 (16 IPs, ~12 usable)"
-  type        = list(string)
-  default     = [
-    "10.0.1.16/28",   # vme-kvm-vm1: IPs .16-.31 (includes .20)
-    "10.0.1.48/28",   # vme-kvm-vm2: IPs .48-.63
-    "10.0.1.80/28",   # Future host 3: IPs .80-.95
-    "10.0.1.96/28",   # Future host 4: IPs .96-.111
-    "10.0.1.112/28",  # Future host 5: IPs .112-.127
-    "10.0.1.128/28",  # Future host 6: IPs .128-.143
-    "10.0.1.144/28",  # Future host 7: IPs .144-.159
-    "10.0.1.160/28",  # Future host 8: IPs .160-.175
-    "10.0.1.176/28",  # Future host 9: IPs .176-.191
-    "10.0.1.192/28"   # Future host 10: IPs .192-.207
-  ]
-}
+
 
 variable "vm_size" {
   description = "Size of the Virtual Machine (supports nested virtualization)"
@@ -93,9 +82,9 @@ variable "tags" {
 
 # Windows Jumphost Variables
 variable "jumphost_ip" {
-  description = "Static IP address for Windows jumphost in management subnet (10.0.2.0/24)"
+  description = "Static IP address for Windows jumphost in VM subnet (10.0.1.0/24)"
   type        = string
-  default     = "10.0.2.100"
+  default     = "10.0.1.200"
 }
 
 variable "jumphost_vm_size" {
@@ -127,4 +116,11 @@ variable "private_dns_zone_name" {
   description = "Name of the private DNS zone for internal name resolution"
   type        = string
   default     = "hpevme.local"
+}
+
+# Optional tag to force re-run of the jumphost OpenSSH VM extension
+variable "openssh_extension_update_tag" {
+  description = "Change this value to force the Custom Script Extension to re-run on the Windows jumphost"
+  type        = string
+  default     = null
 }

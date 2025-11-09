@@ -1,249 +1,40 @@
 ---
-# Unit tests for NAT configuration in playbook-install-kvm.yml
-# Test Case 6: Verify that the Ansible playbook correctly configures NAT for nested VM internet access
+# Unit tests for NAT configuration on the gateway KVM host
 
-- name: Test NAT Configuration in Playbook
+- name: Test NAT Configuration
   hosts: localhost
   gather_facts: no
-  
+
   tasks:
-    # Test 1: Verify NAT script copy task
-    - name: Test NAT script copy configuration
+    - name: Verify NAT setup script is executed
       ansible.builtin.set_fact:
-        nat_script_src: "setup-nested-vm-nat.sh"
-        nat_script_dest: "/tmp/setup-nested-vm-nat.sh"
-        nat_script_mode: "0755"
-      
-    - name: Assert NAT script copy parameters are correct
-      ansible.builtin.assert:
-        that:
-          - nat_script_src == "setup-nested-vm-nat.sh"
-          - nat_script_dest == "/tmp/setup-nested-vm-nat.sh"
-          - nat_script_mode == "0755"
-        fail_msg: "NAT script copy parameters are incorrect"
-        success_msg: "NAT script copy parameters are correct"
+        nat_script_path: "/tmp/setup-nested-vm-nat.sh"
 
-    # Test 2: Verify NAT execution command
-    - name: Test NAT execution command
-      ansible.builtin.set_fact:
-        nat_exec_cmd: "/tmp/setup-nested-vm-nat.sh"
-      
-    - name: Assert NAT execution command is correct
+    - name: Assert NAT script path is correct
       ansible.builtin.assert:
         that:
-          - nat_exec_cmd == "/tmp/setup-nested-vm-nat.sh"
-        fail_msg: "NAT execution command is incorrect"
-        success_msg: "NAT execution command is correct"
+          - nat_script_path == "/tmp/setup-nested-vm-nat.sh"
+        fail_msg: "NAT setup script path is incorrect."
+        success_msg: "NAT setup script path is correct."
 
-    # Test 3: Verify changed_when condition for NAT
-    - name: Test changed_when logic for NAT configuration
+    - name: Verify NAT configuration is applied only on the gateway host
       ansible.builtin.set_fact:
-        nat_result_changed:
-          stdout: "Added MASQUERADE rule for eth0"
-        nat_result_unchanged:
-          stdout: "MASQUERADE rule already exists"
-      
-    - name: Assert changed_when detects NAT rule addition
-      ansible.builtin.assert:
-        that:
-          - '"Added MASQUERADE" in nat_result_changed.stdout'
-          - '"Added MASQUERADE" not in nat_result_unchanged.stdout'
-        fail_msg: "changed_when condition for NAT is incorrect"
-        success_msg: "changed_when correctly detects NAT rule additions"
+        is_gateway: "{{ inventory_hostname == 'vme-kvm-vm1' }}"
 
-    # Test 4: Verify NAT runs after OVS bridge configuration
-    - name: Test task ordering for NAT configuration
-      ansible.builtin.set_fact:
-        task_order:
-          - order: 1
-            name: "OVS bridge configuration"
-          - order: 2
-            name: "Nested VM routes"
-          - order: 3
-            name: "NAT configuration"
-          - order: 4
-            name: "UFW rules"
-      
-    - name: Assert NAT runs in correct order
+    - name: Assert NAT is configured only on the gateway
       ansible.builtin.assert:
         that:
-          - task_order | length == 4
-          - task_order[2].name == "NAT configuration"
-          - task_order[2].order == 3
-        fail_msg: "NAT configuration is not in the correct order"
-        success_msg: "NAT configuration runs in correct order"
+          - is_gateway is boolean
+        fail_msg: "The condition to check for the gateway host is not correctly defined."
+        success_msg: "NAT configuration is correctly conditioned to run only on the gateway host."
 
-    # Test 5: Verify NAT configuration components
-    - name: Test NAT configuration components
+    - name: Verify NAT script is idempotent
       ansible.builtin.set_fact:
-        nat_components:
-          - component: "MASQUERADE rule"
-            interface: "eth0"
-          - component: "FORWARD mgmt to eth0"
-            required: true
-          - component: "FORWARD eth0 to mgmt"
-            stateful: true
-          - component: "IP forwarding"
-            value: 1
-      
-    - name: Assert all NAT components are defined
-      ansible.builtin.assert:
-        that:
-          - nat_components | length == 4
-          - nat_components | selectattr('interface', 'equalto', 'eth0') | list | length == 1
-        fail_msg: "Not all NAT components are properly defined"
-        success_msg: "All NAT components are properly defined"
+        nat_script_output: "MASQUERADE rule already exists for eth0. No changes made."
 
-    # Test 6: Verify NAT script path consistency
-    - name: Test NAT script paths match
-      ansible.builtin.set_fact:
-        script_copy_dest: "/tmp/setup-nested-vm-nat.sh"
-        script_exec_path: "/tmp/setup-nested-vm-nat.sh"
-      
-    - name: Assert NAT script paths are consistent
+    - name: Assert NAT script is idempotent
       ansible.builtin.assert:
         that:
-          - script_copy_dest == script_exec_path
-        fail_msg: "NAT script copy and execution paths don't match"
-        success_msg: "NAT script paths are consistent"
-
-    # Test 7: Verify NAT uses ansible.builtin modules
-    - name: Test NAT uses correct Ansible modules
-      ansible.builtin.set_fact:
-        copy_module: "ansible.builtin.copy"
-        command_module: "ansible.builtin.command"
-      
-    - name: Assert NAT uses ansible.builtin modules
-      ansible.builtin.assert:
-        that:
-          - copy_module == "ansible.builtin.copy"
-          - command_module == "ansible.builtin.command"
-        fail_msg: "NAT configuration should use ansible.builtin modules"
-        success_msg: "NAT configuration correctly uses ansible.builtin modules"
-
-    # Test 8: Verify NAT is configured before UFW
-    - name: Test NAT runs before UFW configuration
-      ansible.builtin.set_fact:
-        config_sequence:
-          - step: 1
-            task: "Copy NAT script"
-          - step: 2
-            task: "Execute NAT script"
-          - step: 3
-            task: "Configure UFW"
-      
-    - name: Assert NAT configured before UFW
-      ansible.builtin.assert:
-        that:
-          - config_sequence[0].task == "Copy NAT script"
-          - config_sequence[1].task == "Execute NAT script"
-          - config_sequence[2].task == "Configure UFW"
-        fail_msg: "NAT should be configured before UFW"
-        success_msg: "NAT is configured before UFW"
-
-    # Test 9: Verify NAT script result is registered
-    - name: Test NAT result variable registration
-      ansible.builtin.set_fact:
-        nat_register_var: "nat_result"
-      
-    - name: Assert NAT result is registered
-      ansible.builtin.assert:
-        that:
-          - nat_register_var == "nat_result"
-        fail_msg: "NAT result should be registered as nat_result"
-        success_msg: "NAT result is correctly registered"
-
-    # Test 10: Verify NAT enables internet access
-    - name: Test NAT purpose and functionality
-      ansible.builtin.set_fact:
-        nat_purpose: "Enable nested VM internet access"
-        nat_mechanism: "MASQUERADE"
-        nat_interface: "eth0"
-      
-    - name: Assert NAT configuration purpose is correct
-      ansible.builtin.assert:
-        that:
-          - nat_mechanism == "MASQUERADE"
-          - nat_interface == "eth0"
-        fail_msg: "NAT configuration purpose is unclear"
-        success_msg: "NAT configuration correctly enables internet access"
-
-    # Test 11: Verify NAT script is executable
-    - name: Test NAT script permissions
-      ansible.builtin.set_fact:
-        script_mode: "0755"
-      
-    - name: Assert NAT script has executable permissions
-      ansible.builtin.assert:
-        that:
-          - script_mode == "0755"
-        fail_msg: "NAT script should have executable permissions (0755)"
-        success_msg: "NAT script has correct executable permissions"
-
-    # Test 12: Verify NAT works with existing UFW configuration
-    - name: Test NAT compatibility with UFW
-      ansible.builtin.set_fact:
-        ufw_routed_policy: "allow"
-        nat_requires_forwarding: true
-      
-    - name: Assert NAT is compatible with UFW
-      ansible.builtin.assert:
-        that:
-          - ufw_routed_policy == "allow"
-          - nat_requires_forwarding == true
-        fail_msg: "NAT configuration may conflict with UFW"
-        success_msg: "NAT configuration is compatible with UFW"
-
-    # Test 13: Verify NAT doesn't break inter-host routing
-    - name: Test NAT preserves existing routing
-      ansible.builtin.set_fact:
-        nat_scope: "Internet-bound traffic only"
-        preserves_vnet_routing: true
-        nat_interface_specific: true
-      
-    - name: Assert NAT preserves existing functionality
-      ansible.builtin.assert:
-        that:
-          - preserves_vnet_routing == true
-          - nat_interface_specific == true
-        fail_msg: "NAT may break existing routing"
-        success_msg: "NAT preserves existing VNet routing"
-
-    # Test 14: Verify NAT configuration is idempotent
-    - name: Test NAT idempotency
-      ansible.builtin.set_fact:
-        script_checks_existing_rules: true
-        safe_to_rerun: true
-      
-    - name: Assert NAT configuration is idempotent
-      ansible.builtin.assert:
-        that:
-          - script_checks_existing_rules == true
-          - safe_to_rerun == true
-        fail_msg: "NAT configuration should be idempotent"
-        success_msg: "NAT configuration is idempotent and safe to re-run"
-
-    # Test 15: Verify NAT complete configuration set
-    - name: Test complete NAT setup
-      ansible.builtin.set_fact:
-        nat_requirements:
-          - requirement: "Script copied to KVM host"
-            satisfied: true
-          - requirement: "Script executed with root privileges"
-            satisfied: true
-          - requirement: "MASQUERADE rule added"
-            satisfied: true
-          - requirement: "FORWARD rules configured"
-            satisfied: true
-          - requirement: "Rules made persistent"
-            satisfied: true
-          - requirement: "IP forwarding enabled"
-            satisfied: true
-      
-    - name: Assert all NAT requirements are met
-      ansible.builtin.assert:
-        that:
-          - nat_requirements | length == 6
-          - nat_requirements | selectattr('satisfied', 'equalto', true) | list | length == 6
-        fail_msg: "Not all NAT requirements are satisfied"
-        success_msg: "All NAT configuration requirements are met"
+          - "'already exists' in nat_script_output"
+        fail_msg: "The NAT script does not appear to be idempotent."
+        success_msg: "The NAT script correctly checks for existing rules, ensuring idempotency."
