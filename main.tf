@@ -101,6 +101,25 @@ resource "azurerm_private_dns_zone_virtual_network_link" "reverse_vm_link" {
   tags = var.tags
 }
 
+# Reverse DNS Zone for 192.168.10.0/24 (Overlay Network)
+resource "azurerm_private_dns_zone" "reverse_overlay" {
+  name                = "10.168.192.in-addr.arpa"
+  resource_group_name = azurerm_resource_group.main.name
+
+  tags = var.tags
+}
+
+# Link Reverse DNS Zone to VNet
+resource "azurerm_private_dns_zone_virtual_network_link" "reverse_overlay_link" {
+  name                  = "${var.prefix}-reverse-overlay-link"
+  resource_group_name   = azurerm_resource_group.main.name
+  private_dns_zone_name = azurerm_private_dns_zone.reverse_overlay.name
+  virtual_network_id    = azurerm_virtual_network.main.id
+  registration_enabled  = false
+
+  tags = var.tags
+}
+
 # PTR Records for Linux VMs
 resource "azurerm_private_dns_ptr_record" "vm" {
   count               = var.vm_count
@@ -120,6 +139,17 @@ resource "azurerm_private_dns_ptr_record" "jumphost" {
   resource_group_name = azurerm_resource_group.main.name
   ttl                 = 300
   records             = ["jumphost.${azurerm_private_dns_zone.main.name}"]
+
+  tags = var.tags
+}
+
+# PTR Record for HPE VME nested VM (Overlay Network)
+resource "azurerm_private_dns_ptr_record" "hpevme_overlay" {
+  name                = "20"
+  zone_name           = azurerm_private_dns_zone.reverse_overlay.name
+  resource_group_name = azurerm_resource_group.main.name
+  ttl                 = 300
+  records             = ["hpevme.${azurerm_private_dns_zone.main.name}"]
 
   tags = var.tags
 }

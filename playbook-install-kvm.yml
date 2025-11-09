@@ -251,9 +251,15 @@
               exit 1
           fi
 
-    - name: Set network to full overlay mode by default
+    - name: Set network mode on gateway host (host 1) for hpe-vm compatibility
+      ansible.builtin.command: /usr/local/bin/switch-network-mode.sh hpe-vm
+      changed_when: false
+      when: gateway_host is defined and gateway_host
+
+    - name: Set network mode on non-gateway hosts to full overlay
       ansible.builtin.command: /usr/local/bin/switch-network-mode.sh full
       changed_when: false
+      when: gateway_host is not defined or not gateway_host
 
     # Note: Overlay network routing (192.168.10.0/24 -> 10.0.1.4) is handled by Azure UDR
     # No manual routes needed on individual hosts - Azure handles this at the subnet level
@@ -282,11 +288,11 @@
     #   when: '"vme-kvm-vm1" in inventory_hostname'
     #   block:
     #     - name: Uploading HPE VM Essentials Disk to remote host
-    #       ansible.builtin.copy:
+    #       ansible.posix.synchronize:
     #         src: "{{ hpe_qcow_local }}"
     #         dest: "{{ hpe_qcow_remote }}"
-    #         mode: '0644'
-
+    #         partial: true
+    #         perms: true
 
   handlers:
     - name: Restart sshd

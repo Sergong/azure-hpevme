@@ -3,3 +3,4 @@ collections:
   - community.libvirt
   - community.windows
   - chocolatey.chocolatey
+  - ansible.posix

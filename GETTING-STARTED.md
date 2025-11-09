@@ -119,7 +119,25 @@ curl -s https://api.ipify.org
    ansible-playbook playbook-install-putty.yml
    ```
 
-## Step 4: Verify the Deployment
+## Step 4: Install the HPE Essentials Manager
+
+1. **Run hpe-vm** on the first host to deploy the HPE Essentials Manager:
+   - SSH into the first host and run the following command:
+   ```
+   sudo hpe-vm
+   ```
+    > NOTE: The  `/tmp/hpe-vm-essentials-8.0.10-1.qcow2.gz` file must be present on the first host (the `playbook-install-kvm.yml` playbook would have placed this file in /tmp)
+
+   - Check the diagram for the IP address to use for the Essentials Manager and use the Azure default DNS (`168.63.129.16`). Instead of the IP address, you may also use the following FQDN:
+     `hpevme.hpevme.local`
+
+2. **Run the switch-network-mode.sh script** to switch to overlay mode:
+   - Run the following command on the first host to switch to full VXLAN Overlay mode:
+     ```
+     switch-network-mode.sh full
+     ```
+
+## Step 5: Verify the Deployment
 
 1.  **Verify the overlay network**:
     ```bash
