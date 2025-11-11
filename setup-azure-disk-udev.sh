@@ -7,36 +7,27 @@ set -e
 echo "Setting up consistent Azure disk naming for Ceph..."
 
 # Create udev rule for Azure data disk at LUN 10
+# This rule is based on the output of `udevadm info` and should be robust.
 cat > /etc/udev/rules.d/99-azure-data-disk.rules <<'EOF'
 # Azure Data Disk at LUN 10 - consistent naming for Ceph
-# This creates /dev/azure-data as a stable symlink regardless of whether
-# the underlying device is /dev/sda or /dev/sdb
+# This creates /dev/azure-data as a stable symlink.
 
-# Match the disk by LUN 10 (data disk)
-SUBSYSTEM=="block", ENV{DEVTYPE}=="disk", KERNEL=="sd*", \
-  ATTRS{device/vendor}=="Msft", ATTRS{device/model}=="Virtual Disk", \
-  ENV{ID_PATH}=="*-lun-10", \
-  SYMLINK+="azure-data", \
-  OPTIONS+="string_escape=replace"
+# Match the disk by its parent SCSI device's kernel name, which includes the LUN.
+SUBSYSTEM=="block", ENV{DEVTYPE}=="disk", KERNEL=="sd*", SUBSYSTEMS=="scsi", KERNELS=="*:*:*:10", ATTRS{vendor}=="Msft    ", ATTRS{model}=="Virtual Disk    ", SYMLINK+="azure-data", OPTIONS+="string_escape=replace"
 
 # Also create partition symlinks
-SUBSYSTEM=="block", ENV{DEVTYPE}=="partition", KERNEL=="sd*[0-9]", \
-  ATTRS{device/vendor}=="Msft", ATTRS{device/model}=="Virtual Disk", \
-  ENV{ID_PATH}=="*-lun-10", \
-  SYMLINK+="azure-data-part%n", \
-  OPTIONS+="string_escape=replace"
+SUBSYSTEM=="block", ENV{DEVTYPE}=="partition", KERNEL=="sd*[0-9]", SUBSYSTEMS=="scsi", KERNELS=="*:*:*:10", SYMLINK+="azure-data-part%n", OPTIONS+="string_escape=replace"
 EOF
 
 echo "Created udev rules at /etc/udev/rules.d/99-azure-data-disk.rules"
 cat /etc/udev/rules.d/99-azure-data-disk.rules
 
-# Reload udev rules
+# Reload udev rules and wait for them to be applied.
 echo "Reloading udev rules..."
 udevadm control --reload-rules
 udevadm trigger --subsystem-match=block
-
-# Wait for udev to settle
-sleep 3
+echo "Waiting for udev to settle..."
+udevadm settle
 
 # Verify the symlink was created
 echo ""
@@ -51,8 +42,8 @@ if [ -L /dev/azure-data ]; then
 else
     echo "✗ ERROR: /dev/azure-data symlink not created"
     echo ""
-    echo "Available disk paths:"
-    ls -la /dev/disk/azure/scsi1/
+    echo "Available disk paths in /dev/disk/by-id/:"
+    ls -la /dev/disk/by-id/
     exit 1
 fi
 

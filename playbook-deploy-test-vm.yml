@@ -42,7 +42,7 @@
     - name: Create cloud-init user-data
       ansible.builtin.template:
         dest: "/tmp/user-data"
-        src: "user-data.j2"
+        src: "templates/user-data.j2"
         mode: '0644'
       vars:
         ssh_public_key: "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQC6e3zVOWqWN5k+DMKXyMt8qcdzyZdn8uDwTe00nLMz5Dlk1E1R7H4EdXPdgn4QkWCRgcg9zt9RvpIk+ecmZJgSrQXvgXm9lMQcEi1wiukdaYx5DEgNiblR1W5j5cFTW1oUHyAK3mKa3SZ0w5ACzMQxQxowgISa8PWza5mK9koBQ8+0r1xYMyGiZf6DAiKHMbmDfSBQiEUaVilMTfeQE7hIpmtRFj78H5G1ecWWK2b4mHcGGNwyrZXu1uCTvm+j9znv6mC5KPpCeRXQJ+OwpOSZPBWAuQn2ff9aHZq8a1IHm4oW2fzMrTRxPW/KvjJMYaAE3SXhEsq9DeLMmzizkJtHrnjQN8zD0wi2dUd+ujtOdtCYxsMgcTcYzyjz9Hiy6LQFVl77WZ8DeQ3b4N62qQx7sGzdd/q6fqc7CQWvbNm81ekqQY1CITZuo7dR8hYOFuwkqurd+JVg4mG2TD9onYSSZI+ulaMUgLLFgzmlfTMqnNg7crOsAZS+6ruXvOh05X0= smeeuwsen@serge-macmini.local"
@@ -50,7 +50,7 @@
     - name: Create cloud-init meta-data
       ansible.builtin.template:
         dest: "/tmp/meta-data"
-        src: "meta-data.j2"
+        src: "templates/meta-data.j2"
         mode: '0644'
 
     - name: Create cloud-init ISO
@@ -62,7 +62,7 @@
     - name: Define the virtual machine
       community.libvirt.virt:
         command: define
-        xml: "{{ lookup('template', 'vm-template.xml.j2') }}"
+        xml: "{{ lookup('template', 'templates/vm-template.xml.j2') }}"
 
     - name: Get VM status
       community.libvirt.virt:

@@ -232,6 +232,18 @@ resource "azurerm_network_security_group" "vm_nsg" {
   }
 
   security_rule {
+    name                       = "AllowMorpheusManagementSubnet"
+    priority                   = 1004
+    direction                  = "Inbound"
+    access                     = "Allow"
+    protocol                   = "*"
+    source_port_range          = "*"
+    destination_port_range     = "*"
+    source_address_prefix      = "192.168.10.0/24"
+    destination_address_prefix = "*"
+  }
+
+  security_rule {
     name                       = "AllowVnetInbound"
     priority                   = 1005
     direction                  = "Inbound"

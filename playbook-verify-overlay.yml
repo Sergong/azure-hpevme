@@ -1,8 +1,8 @@
 ---
 - name: Verify VXLAN Overlay Network Configuration
   hosts: azure_vms
-  become: yes
-  gather_facts: yes
+  become: true
+  gather_facts: true
 
   tasks:
     - name: Check IP forwarding is enabled
@@ -34,7 +34,10 @@
         msg: "{{ ovs_config.stdout_lines }}"
 
     - name: Check VXLAN interface exists
-      ansible.builtin.shell: ovs-vsctl list-ports mgmt | grep -q '^vxlan0$'
+      ansible.builtin.shell:
+        cmd: |
+          set -o pipefail
+          ovs-vsctl list-ports mgmt | grep -q '^vxlan0$'
       register: vxlan_check
       failed_when: false
       changed_when: false
@@ -64,7 +67,10 @@
         msg: "{{ mgmt_ip.stdout_lines }}"
 
     - name: Verify gateway IP on Host 1
-      ansible.builtin.shell: ip addr show mgmt | grep -q '192.168.10.1/24'
+      ansible.builtin.shell:
+        cmd: |
+          set -o pipefail
+          ip addr show mgmt | grep -q '192.168.10.1/24'
       register: gateway_ip_check
       failed_when: false
       changed_when: false
@@ -76,7 +82,10 @@
       when: gateway_host is defined and gateway_host
 
     - name: Verify no IP on Host 2 mgmt bridge
-      ansible.builtin.shell: ip addr show mgmt | grep -q 'inet '
+      ansible.builtin.shell:
+        cmd: |
+          set -o pipefail
+          ip addr show mgmt | grep -q 'inet '
       register: no_ip_check
       failed_when: false
       changed_when: false
@@ -97,7 +106,10 @@
         msg: "{{ routes.stdout_lines }}"
 
     - name: Check for overlay network route (Azure UDR or kernel)
-      ansible.builtin.shell: ip route show | grep -q '192.168.10.0/24'
+      ansible.builtin.shell:
+        cmd: |
+          set -o pipefail
+          ip route show | grep -q '192.168.10.0/24'
       register: overlay_route_check
       failed_when: false
       changed_when: false

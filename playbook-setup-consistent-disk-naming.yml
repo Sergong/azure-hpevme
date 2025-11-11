@@ -1,12 +1,12 @@
 ---
 - name: Setup Consistent Azure Disk Naming for Ceph
   hosts: azure_vms
-  become: yes
-  gather_facts: yes
+  become: true
+  gather_facts: true
 
   tasks:
     - name: Copy udev setup script to hosts
-      copy:
+      ansible.builtin.copy:
         src: setup-azure-disk-udev.sh
         dest: /tmp/setup-azure-disk-udev.sh
         mode: '0755'
@@ -14,43 +14,61 @@
         group: root
 
     - name: Execute udev setup script
-      shell: /tmp/setup-azure-disk-udev.sh
+      ansible.builtin.shell: /tmp/setup-azure-disk-udev.sh
       register: udev_setup_result
 
     - name: Display udev setup results
-      debug:
+      ansible.builtin.debug:
         var: udev_setup_result.stdout_lines
 
     - name: Verify /dev/azure-data exists
-      stat:
+      ansible.builtin.stat:
         path: /dev/azure-data
       register: azure_data_link
 
     - name: Fail if symlink not created
-      fail:
+      ansible.builtin.fail:
         msg: "/dev/azure-data symlink was not created successfully"
       when: not azure_data_link.stat.exists
 
     - name: Get real device path
-      shell: readlink -f /dev/azure-data
+      ansible.builtin.command: readlink -f /dev/azure-data
       register: real_device
       changed_when: false
 
     - name: Get disk information
-      shell: lsblk -o NAME,SIZE,TYPE,MOUNTPOINT $(readlink -f /dev/azure-data)
+      ansible.builtin.shell: lsblk -o NAME,SIZE,TYPE,MOUNTPOINT $(readlink -f /dev/azure-data)
       register: disk_info
       changed_when: false
 
     - name: Display device mapping
-      debug:
+      ansible.builtin.debug:
         msg: |
           Host: {{ inventory_hostname }}
           Symlink: /dev/azure-data -> {{ real_device.stdout }}
           Disk Info:
           {{ disk_info.stdout }}
 
+    - name: Create /data mount point
+      ansible.builtin.file:
+        path: /data
+        state: directory
+        mode: '0755'
+
+    - name: Ensure the volume is formatted with ext4
+      community.general.filesystem:
+        fstype: ext4
+        dev: /dev/azure-data
+
+    - name: Ensure the /dev/azure-data device is mounted at /data
+      ansible.posix.mount:
+        path: /data
+        src: /dev/azure-data
+        fstype: ext4
+        state: mounted
+
     - name: Create summary file
-      copy:
+      ansible.builtin.copy:
         content: |
           Azure Data Disk Configuration
           =============================
@@ -58,13 +76,13 @@
           Consistent Device: /dev/azure-data
           Real Device: {{ real_device.stdout }}
           LUN: 10
-          
+
           This symlink is stable and can be used for Ceph OSD configuration.
-          
+
           Usage:
           - For Ceph: ceph-volume lvm create --data /dev/azure-data
           - Direct access: Use /dev/azure-data instead of /dev/sda or /dev/sdb
-          
+
           The underlying device ({{ real_device.stdout }}) may vary between hosts,
           but /dev/azure-data will always point to the correct LUN 10 data disk.
         dest: /root/azure-disk-mapping.txt
@@ -73,12 +91,12 @@
         mode: '0644'
 
     - name: Display completion message
-      debug:
+      ansible.builtin.debug:
         msg: |
           ✓ Consistent disk naming configured successfully
           ✓ Use /dev/azure-data for Ceph OSD setup
           ✓ Configuration saved to /root/azure-disk-mapping.txt
 
   handlers:
-    - name: reload udev
-      shell: udevadm control --reload-rules && udevadm trigger
+    - name: Reload udev
+      ansible.builtin.shell: udevadm control --reload-rules && udevadm trigger

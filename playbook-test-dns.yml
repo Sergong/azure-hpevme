@@ -1,0 +1,23 @@
+---
+- name: Test DNS search domain for Azure Private DNS Zone
+  hosts: azure_vms
+  become: true
+  gather_facts: false
+
+  vars:
+    dns_search_domain: "hpevme.local"
+
+  tasks:
+    - name: Verify DNS resolution
+      ansible.builtin.shell: ping -c 1 {{ item }}
+      loop:
+        - "vme-kvm-vm1.{{ dns_search_domain }}"
+        - "vme-kvm-vm2.{{ dns_search_domain }}"
+        - "jumphost.{{ dns_search_domain }}"
+      register: dns_test
+      failed_when: false
+      changed_when: false
+
+    - name: Display DNS test results
+      ansible.builtin.debug:
+        msg: "{{ dns_test.results | map(attribute='stdout_lines') | list }}"

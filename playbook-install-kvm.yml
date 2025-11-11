@@ -16,6 +16,7 @@
       - ceph-common
       - libvirt-daemon-driver-storage-rbd
       - nfs-common
+      - nfs-kernel-server
       - gfs2-utils
       - corosync
       - dlm-controld
@@ -135,87 +136,20 @@
         mode: '0755'
 
     - name: Create hpe-vm compatible netplan config
-      ansible.builtin.copy:
+      ansible.builtin.template:
+        src: templates/netplan-hpe-vm-compat.j2
         dest: /etc/netplan/configs/netplan-hpe-vm-compat.yaml
         owner: root
         group: root
         mode: '0600'
-        content: |
-          network:
-            version: 2
-            ethernets:
-              eth0:
-                dhcp4: false
-                addresses:
-                  - {{ private_ip }}/24
-                routes:
-                  - to: default
-                    via: 10.0.1.1
-                  - to: 168.63.129.16
-                    via: 10.0.1.1
-                nameservers:
-                  addresses:
-                    - 168.63.129.16
-                  search:
-                    - hpevme.local
-              eth1:
-                dhcp4: no
-                dhcp6: no
-            bridges:
-              mgmt:
-                interfaces: [eth1]
-                dhcp4: no
-                dhcp6: no
-          {% if gateway_host is defined and gateway_host %}
-                addresses:
-                  - {{ overlay_gateway_ip }}/24
-          {% endif %}
-                openvswitch: {}
 
     - name: Create full overlay netplan config
-      ansible.builtin.copy:
+      ansible.builtin.template:
+        src: templates/netplan-full-overlay.j2
         dest: /etc/netplan/configs/netplan-full-overlay.yaml
         owner: root
         group: root
         mode: '0600'
-        content: |
-          network:
-            version: 2
-            ethernets:
-              eth0:
-                dhcp4: false
-                addresses:
-                  - {{ private_ip }}/24
-                routes:
-                  - to: default
-                    via: 10.0.1.1
-                  - to: 168.63.129.16
-                    via: 10.0.1.1
-                nameservers:
-                  addresses:
-                    - 168.63.129.16
-                  search:
-                    - hpevme.local
-              eth1:
-                dhcp4: no
-                dhcp6: no
-            bridges:
-              mgmt:
-                interfaces: [eth1, vxlan0]
-                dhcp4: no
-                dhcp6: no
-          {% if gateway_host is defined and gateway_host %}
-                addresses:
-                  - {{ overlay_gateway_ip }}/24
-          {% endif %}
-                openvswitch: {}
-            tunnels:
-              vxlan0:
-                mode: vxlan
-                id: 10
-                remote: {{ remote_host_ip }}
-                local: {{ private_ip }}
-                port: 4789
 
     - name: Create network mode switching script
       ansible.builtin.copy:
@@ -251,8 +185,8 @@
               exit 1
           fi
 
-    - name: Set network mode on gateway host (host 1) for hpe-vm compatibility
-      ansible.builtin.command: /usr/local/bin/switch-network-mode.sh hpe-vm
+    - name: Set network mode on gateway host (host 1) for full compatibility
+      ansible.builtin.command: /usr/local/bin/switch-network-mode.sh full
       changed_when: false
       when: gateway_host is defined and gateway_host
 
@@ -284,15 +218,14 @@
       ansible.builtin.command: netfilter-persistent save
       changed_when: false
 
-    # - name: Tasks for the first Host
-    #   when: '"vme-kvm-vm1" in inventory_hostname'
-    #   block:
-    #     - name: Uploading HPE VM Essentials Disk to remote host
-    #       ansible.posix.synchronize:
-    #         src: "{{ hpe_qcow_local }}"
-    #         dest: "{{ hpe_qcow_remote }}"
-    #         partial: true
-    #         perms: true
+    - name: Tasks for the first Host
+      when: '"vme-kvm-vm1" in inventory_hostname'
+      block:
+        - name: Uploading HPE VM Essentials Disk to remote host
+          ansible.builtin.copy:
+            src: "{{ hpe_qcow_local }}"
+            dest: "{{ hpe_qcow_remote }}"
+            mode: '0644'
 
   handlers:
     - name: Restart sshd

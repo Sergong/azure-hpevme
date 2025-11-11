@@ -1,0 +1,87 @@
+---
+- name: Diagnose NFS Issues
+  hosts: azure_vms
+  become: true
+  gather_facts: false
+
+  tasks:
+    - name: 1. Show content of /etc/exports
+      ansible.builtin.command: cat /etc/exports
+      register: exports_content
+      changed_when: false
+
+    - name: 2. Show active kernel exports
+      ansible.builtin.command: exportfs -v
+      register: exportfs_output
+      changed_when: false
+
+    - name: 3. Check NFS server service status
+      ansible.builtin.command: systemctl status nfs-kernel-server
+      register: nfs_service_status
+      changed_when: false
+      failed_when: false # Don't fail if service isn't running, just report
+
+    - name: 4. Check RPC services
+      ansible.builtin.command: rpcinfo -p
+      register: rpcinfo_output
+      changed_when: false
+
+    - name: 5. Check UFW firewall status
+      ansible.builtin.command: ufw status verbose
+      register: ufw_status
+      changed_when: false
+      failed_when: false
+
+    - name: 6. Check Firewalld service status
+      ansible.builtin.command: systemctl status firewalld
+      register: firewalld_status
+      changed_when: false
+      failed_when: false
+
+    - name: 7. Get recent NFS server logs from journald
+      ansible.builtin.command: journalctl -u nfs-kernel-server.service --no-pager --since "15 minutes ago"
+      register: nfs_journal_logs
+      changed_when: false
+      failed_when: false
+
+    - name: --- DIAGNOSTIC REPORT FOR {{ inventory_hostname }} ---
+      ansible.builtin.debug:
+        msg:
+          - "===================================================================="
+          - "1. /etc/exports"
+          - "--------------------------------------------------------------------"
+          - "{{ exports_content.stdout_lines }}"
+          - ""
+          - "===================================================================="
+          - "2. Active Exports (exportfs -v)"
+          - "--------------------------------------------------------------------"
+          - "{{ exportfs_output.stdout_lines }}"
+          - ""
+          - "===================================================================="
+          - "3. NFS Service Status (systemctl)"
+          - "--------------------------------------------------------------------"
+          - "{{ nfs_service_status.stdout_lines }}"
+          - "{{ nfs_service_status.stderr_lines }}"
+          - ""
+          - "===================================================================="
+          - "4. RPC Services (rpcinfo -p)"
+          - "--------------------------------------------------------------------"
+          - "{{ rpcinfo_output.stdout_lines }}"
+          - ""
+          - "===================================================================="
+          - "5. UFW Firewall Status"
+          - "--------------------------------------------------------------------"
+          - "{{ ufw_status.stdout_lines }}"
+          - ""
+          - "===================================================================="
+          - "6. Firewalld Status"
+          - "--------------------------------------------------------------------"
+          - "{{ firewalld_status.stdout_lines }}"
+          - "{{ firewalld_status.stderr_lines }}"
+          - ""
+          - "===================================================================="
+          - "7. NFS Server Logs (journalctl)"
+          - "--------------------------------------------------------------------"
+          - "{{ nfs_journal_logs.stdout_lines }}"
+          - ""
+          - "===================================================================="

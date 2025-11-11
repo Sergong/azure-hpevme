@@ -105,17 +105,27 @@ curl -s https://api.ipify.org
     ansible-galaxy collection install -r requirements.yml
    ```
 
-6. **Confirm SSH** is working correctly
+4. **Confirm SSH** is working correctly
    - Ensure that you can log in with the account you specified for the Ubuntu hosts (`admin_username`) and using the SSH Keys (`ssh_public_key_path`) you specified in the `terraform.tfvars` file and ensure you allow/trust the SSH Key when prompted.
 
-7.  **Run the main playbook** to configure the KVM hosts:
+5.  **Run the main playbook** to configure the KVM hosts:
     ```bash
     ansible-playbook playbook-install-kvm.yml
     ```
     This playbook will install KVM, Open vSwitch, and configure the VXLAN overlay network using `netplan`.
 
-8. Run the Windows Playbook to install putty (optional)
+6. **Run the `playbook-setup-consistent-disk-naming.yml` playbook** to configure consist disk name for the extra data disk and mounted as `/data`:
+   ```bash
+   ansible-playbook playbook-setup-consistent-disk-naming.yml
    ```
+
+7. **Run the `playbook-configure-nfs.yml` playbook** to configure NFS Server on each host and create and export the `/data/VMs` directory which can then be used as shared storage for the cluster:
+   ```bash
+   ansible-playbook playbook-configure-nfs.yml
+   ```
+
+8.  **Run the Windows Playbook** to install putty (optional)
+   ```bash
    ansible-playbook playbook-install-putty.yml
    ```
 
@@ -135,6 +145,36 @@ curl -s https://api.ipify.org
    - Run the following command on the first host to switch to full VXLAN Overlay mode:
      ```
      switch-network-mode.sh full
+     ```
+
+3. **Change the MTU size of the VME Manager** to 1450 to ensure that it is compatible with the overlay network:
+   - Log into the `hpevme` vm on Host 1 using the following command (you will use the admin user/password you set in step 1):
+     ```
+     virsh console hpevme
+     ```
+   - Edit the netplan config which is located in /etc/netplan/50-cloud-init.yaml and add the `mtu: 1450` key/value under `eth0 > addresses` using vi.
+     The netplan will look like this after editing:
+     ```
+     network:
+       version: 2
+       ethernets:
+         eth0:
+           match:
+             macaddress: "52:54:00:70:8b:8d"
+           addresses:
+           - "192.168.10.20/24"
+           mtu: 1450
+           nameservers:
+             addresses:
+             - 168.63.129.16
+           set-name: "eth0"
+           routes:
+             - to: "default"
+               via: "192.168.10.1"
+     ```
+   - Now apply the netplan config:
+     ```
+     sudo netplan apply
      ```
 
 ## Step 5: Verify the Deployment

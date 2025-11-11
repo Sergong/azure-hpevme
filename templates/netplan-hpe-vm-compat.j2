@@ -18,10 +18,9 @@ network:
     eth1:
       dhcp4: no
       dhcp6: no
-
   bridges:
     mgmt:
-      interfaces: [eth1, vxlan0]
+      interfaces: [eth1]
       dhcp4: no
       dhcp6: no
 {% if gateway_host is defined and gateway_host %}
@@ -29,11 +28,3 @@ network:
         - {{ overlay_gateway_ip }}/24
 {% endif %}
       openvswitch: {}
-
-  tunnels:
-    vxlan0:
-      mode: vxlan
-      id: 10
-      remote: {{ remote_host_ip }}
-      local: {{ private_ip }}
-      port: 4789
